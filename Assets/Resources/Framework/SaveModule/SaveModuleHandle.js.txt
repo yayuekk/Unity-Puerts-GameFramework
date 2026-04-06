@@ -1,0 +1,50 @@
+"use strict";
+/**
+ * SaveModuleHandle — 模块存档句柄（内部实现）
+ *
+ * 职责：管理某个逻辑模块下所有存档文件的增删查列操作。
+ * 对应文件系统目录：{rootPath}/{moduleName}/
+ *
+ * 设计特点：
+ *   - getHandle<T>() 是轻量工厂方法，每次创建新的 SaveHandle，不缓存数据
+ *   - fileExt 由 SaveSystem 根据当前模式注入，驱动文件扩展名与过滤逻辑
+ *   - 模块目录在构造时通过 ensureDir 自动创建
+ *   - clearAll 删除并重建目录，保持模块目录始终存在
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SaveModuleHandle = void 0;
+const SaveHandle_1 = require("./SaveHandle");
+// ─── SaveModuleHandle ─────────────────────────────────────────────────────────
+class SaveModuleHandle {
+    moduleName;
+    _storage;
+    _serializer;
+    /** 当前存档模式对应的文件扩展名（".json" 或 ".sav"） */
+    _fileExt;
+    constructor(moduleName, storage, serializer, fileExt) {
+        this.moduleName = moduleName;
+        this._storage = storage;
+        this._serializer = serializer;
+        this._fileExt = fileExt;
+        storage.ensureDir(moduleName);
+    }
+    // ── ISaveModule ───────────────────────────────────────────────────────────
+    listSaves() {
+        return this._storage
+            .listFiles(this.moduleName)
+            .filter(f => f.endsWith(this._fileExt))
+            .map(f => f.slice(0, -this._fileExt.length));
+    }
+    getHandle(fileName) {
+        return new SaveHandle_1.SaveHandle(this.moduleName, fileName, this._storage, this._serializer, this._fileExt);
+    }
+    deleteSave(fileName) {
+        this._storage.deleteFile(`${this.moduleName}/${fileName}${this._fileExt}`);
+    }
+    clearAll() {
+        this._storage.deleteDir(this.moduleName);
+        this._storage.ensureDir(this.moduleName);
+    }
+}
+exports.SaveModuleHandle = SaveModuleHandle;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU2F2ZU1vZHVsZUhhbmRsZS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1NhdmVNb2R1bGUvU2F2ZU1vZHVsZUhhbmRsZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7O0dBV0c7OztBQUdILDZDQUEwQztBQUUxQyxpRkFBaUY7QUFFakYsTUFBYSxnQkFBZ0I7SUFFaEIsVUFBVSxDQUFTO0lBRVgsUUFBUSxDQUFrQjtJQUMxQixXQUFXLENBQWtCO0lBQzlDLHVDQUF1QztJQUN0QixRQUFRLENBQVk7SUFFckMsWUFDSSxVQUFrQixFQUNsQixPQUF3QixFQUN4QixVQUEyQixFQUMzQixPQUFrQjtRQUVsQixJQUFJLENBQUMsVUFBVSxHQUFJLFVBQVUsQ0FBQztRQUM5QixJQUFJLENBQUMsUUFBUSxHQUFNLE9BQU8sQ0FBQztRQUMzQixJQUFJLENBQUMsV0FBVyxHQUFHLFVBQVUsQ0FBQztRQUM5QixJQUFJLENBQUMsUUFBUSxHQUFNLE9BQU8sQ0FBQztRQUMzQixPQUFPLENBQUMsU0FBUyxDQUFDLFVBQVUsQ0FBQyxDQUFDO0lBQ2xDLENBQUM7SUFFRCw2RUFBNkU7SUFFN0UsU0FBUztRQUNMLE9BQU8sSUFBSSxDQUFDLFFBQVE7YUFDZixTQUFTLENBQUMsSUFBSSxDQUFDLFVBQVUsQ0FBQzthQUMxQixNQUFNLENBQUMsQ0FBQyxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUMsUUFBUSxDQUFDLElBQUksQ0FBQyxRQUFRLENBQUMsQ0FBQzthQUN0QyxHQUFHLENBQUMsQ0FBQyxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUMsS0FBSyxDQUFDLENBQUMsRUFBRSxDQUFDLElBQUksQ0FBQyxRQUFRLENBQUMsTUFBTSxDQUFDLENBQUMsQ0FBQztJQUNyRCxDQUFDO0lBRUQsU0FBUyxDQUFJLFFBQWdCO1FBQ3pCLE9BQU8sSUFBSSx1QkFBVSxDQUNqQixJQUFJLENBQUMsVUFBVSxFQUNmLFFBQVEsRUFDUixJQUFJLENBQUMsUUFBUSxFQUNiLElBQUksQ0FBQyxXQUFXLEVBQ2hCLElBQUksQ0FBQyxRQUFRLENBQ2hCLENBQUM7SUFDTixDQUFDO0lBRUQsVUFBVSxDQUFDLFFBQWdCO1FBQ3ZCLElBQUksQ0FBQyxRQUFRLENBQUMsVUFBVSxDQUNwQixHQUFHLElBQUksQ0FBQyxVQUFVLElBQUksUUFBUSxHQUFHLElBQUksQ0FBQyxRQUFRLEVBQUUsQ0FDbkQsQ0FBQztJQUNOLENBQUM7SUFFRCxRQUFRO1FBQ0osSUFBSSxDQUFDLFFBQVEsQ0FBQyxTQUFTLENBQUMsSUFBSSxDQUFDLFVBQVUsQ0FBQyxDQUFDO1FBQ3pDLElBQUksQ0FBQyxRQUFRLENBQUMsU0FBUyxDQUFDLElBQUksQ0FBQyxVQUFVLENBQUMsQ0FBQztJQUM3QyxDQUFDO0NBQ0o7QUFuREQsNENBbURDIn0=

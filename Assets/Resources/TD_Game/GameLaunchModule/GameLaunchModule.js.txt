@@ -1,0 +1,71 @@
+"use strict";
+/**
+ * GameLaunchModule — 游戏启动模块
+ *
+ * 职责（高内聚）：
+ *   - 游戏逻辑层的启动入口，负责 Framework 与 GAS 就绪后的首帧引导
+ *   - 执行一次性的启动流程：如订阅框架事件、触发首屏 UI/场景、初始化启动阶段状态
+ *   - 不承载具体玩法逻辑，仅做「启动」相关编排
+ *
+ * 依赖（低耦合）：
+ *   - 仅依赖 IGameModuleManager，通过 manager.framework 获取 Framework，
+ *     再通过 framework.getModule() 按需获取各子系统（Event、Res、Log、UI、Scene 等）
+ *
+ * 性能：
+ *   - 不在 onUpdate 中做每帧逻辑，不加入 update 列表
+ *   - Framework / GAS 在 onInit 中解析并缓存，避免重复查找
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GameLaunchModule = exports.GAME_LAUNCH_MODULE_NAME = void 0;
+const GameplayAbilitySystem_1 = require("../../GameplayAbilitySystem");
+const Example_1 = require("./Example");
+// ─── 常量 ────────────────────────────────────────────────────────────────────
+exports.GAME_LAUNCH_MODULE_NAME = "GameLaunchModule";
+// ─── GameLaunchModule ─────────────────────────────────────────────────────────
+class GameLaunchModule {
+    moduleName = exports.GAME_LAUNCH_MODULE_NAME;
+    _manager;
+    _framework;
+    _gas;
+    // ── IGameLogicModule 生命周期 ──────────────────────────────────────────────
+    onInit(manager) {
+        this._manager = manager;
+        this._framework = manager.framework;
+        this._gas = this._framework.getModule(GameplayAbilitySystem_1.GAS_MODULE_NAME);
+        this._runBootstrap();
+    }
+    onShutdown() {
+        this._framework = undefined;
+        this._gas = undefined;
+    }
+    // ── 内部实现 ─────────────────────────────────────────────────────────────
+    _onBeforeShutdown() {
+        // 框架即将关闭，可在此做启动模块的收尾（如关闭启动期 UI）
+    }
+    /**
+     * 启动阶段一次性逻辑：在 Framework / GAS 就绪后执行。
+     * 子类可重写以扩展启动流程，可在此使用 event / res / log / scene / ui 等触发首屏。
+     */
+    _runBootstrap() {
+        // 预留：打开主菜单、加载首场景、注册游戏全局事件等
+        // 例：this._framework.event.emit("game:launchComplete");
+        // 例：this.resSystem.loadAsync(...); this.sceneSystem.loadScene(...);
+        var exampleDemo = new Example_1.ExampleDemo(this._framework, this._gas);
+        exampleDemo.Init();
+    }
+    // ── 只读访问器（供扩展或测试）────────────────────────────────────────────
+    /** 游戏模块管理器，用于按需获取其它游戏模块 */
+    get manager() {
+        return this._manager;
+    }
+    /** Framework 引用（Event、各子系统均通过 framework 获取） */
+    get framework() {
+        return this._framework;
+    }
+    /** GAS 服务层引用 */
+    get gas() {
+        return this._gas;
+    }
+}
+exports.GameLaunchModule = GameLaunchModule;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiR2FtZUxhdW5jaE1vZHVsZS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvVERfR2FtZS9HYW1lTGF1bmNoTW9kdWxlL0dhbWVMYXVuY2hNb2R1bGUudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7Ozs7R0FlRzs7O0FBR0gsdUVBQXdFO0FBRXhFLHVDQUF3QztBQUd4Qyw4RUFBOEU7QUFFakUsUUFBQSx1QkFBdUIsR0FBRyxrQkFBMkIsQ0FBQztBQUVuRSxpRkFBaUY7QUFFakYsTUFBYSxnQkFBZ0I7SUFFaEIsVUFBVSxHQUFHLCtCQUF1QixDQUFDO0lBRXRDLFFBQVEsQ0FBc0I7SUFDOUIsVUFBVSxDQUFpQjtJQUMzQixJQUFJLENBQVk7SUFJeEIsMEVBQTBFO0lBRTFFLE1BQU0sQ0FBQyxPQUEyQjtRQUM5QixJQUFJLENBQUMsUUFBUSxHQUFHLE9BQU8sQ0FBQztRQUN4QixJQUFJLENBQUMsVUFBVSxHQUFHLE9BQU8sQ0FBQyxTQUFTLENBQUM7UUFDcEMsSUFBSSxDQUFDLElBQUksR0FBRyxJQUFJLENBQUMsVUFBVSxDQUFDLFNBQVMsQ0FBVyx1Q0FBZSxDQUFDLENBQUM7UUFFakUsSUFBSSxDQUFDLGFBQWEsRUFBRSxDQUFDO0lBQ3pCLENBQUM7SUFFRCxVQUFVO1FBQ04sSUFBSSxDQUFDLFVBQVUsR0FBRyxTQUFVLENBQUM7UUFDN0IsSUFBSSxDQUFDLElBQUksR0FBRyxTQUFVLENBQUM7SUFDM0IsQ0FBQztJQUVELHdFQUF3RTtJQUVoRSxpQkFBaUI7UUFDckIsZ0NBQWdDO0lBQ3BDLENBQUM7SUFFRDs7O09BR0c7SUFDTyxhQUFhO1FBQ25CLDJCQUEyQjtRQUMzQix1REFBdUQ7UUFDdkQsb0VBQW9FO1FBRXBFLElBQUksV0FBVyxHQUFHLElBQUkscUJBQVcsQ0FBQyxJQUFJLENBQUMsVUFBVSxFQUFFLElBQUksQ0FBQyxJQUFJLENBQUMsQ0FBQTtRQUM3RCxXQUFXLENBQUMsSUFBSSxFQUFFLENBQUE7SUFDdEIsQ0FBQztJQUVELCtEQUErRDtJQUUvRCwyQkFBMkI7SUFDM0IsSUFBYyxPQUFPO1FBQ2pCLE9BQU8sSUFBSSxDQUFDLFFBQVEsQ0FBQztJQUN6QixDQUFDO0lBRUQsK0NBQStDO0lBQy9DLElBQWMsU0FBUztRQUNuQixPQUFPLElBQUksQ0FBQyxVQUFVLENBQUM7SUFDM0IsQ0FBQztJQUVELGdCQUFnQjtJQUNoQixJQUFjLEdBQUc7UUFDYixPQUFPLElBQUksQ0FBQyxJQUFJLENBQUM7SUFDckIsQ0FBQztDQUVKO0FBN0RELDRDQTZEQyJ9

@@ -1,0 +1,25 @@
+"use strict";
+/**
+ * LogTypes — 日志系统公共类型定义
+ *
+ * 设计原则：
+ *   - 仅包含对外暴露的枚举与接口，与内部实现完全解耦
+ *   - 内部数据结构（ChannelEntry）不在此文件中，见 LogSystem.ts
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.LogLevel = void 0;
+// ─── 日志等级 ──────────────────────────────────────────────────────────────────
+/**
+ * 日志等级（分类）
+ * - Debug : 调试信息，仅开发阶段使用
+ * - Info  : 普通运行信息
+ * - Warn  : 警告，功能仍可运行但存在隐患
+ * - Error : 错误，功能已受影响
+ */
+exports.LogLevel = {
+    Debug: "debug",
+    Info: "info",
+    Warn: "warn",
+    Error: "error",
+};
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiTG9nVHlwZXMuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9Mb2dNb2R1bGUvTG9nVHlwZXMudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7R0FNRzs7O0FBRUgsOEVBQThFO0FBRTlFOzs7Ozs7R0FNRztBQUNVLFFBQUEsUUFBUSxHQUFHO0lBQ3BCLEtBQUssRUFBRSxPQUFPO0lBQ2QsSUFBSSxFQUFHLE1BQU07SUFDYixJQUFJLEVBQUcsTUFBTTtJQUNiLEtBQUssRUFBRSxPQUFPO0NBQ1IsQ0FBQyJ9

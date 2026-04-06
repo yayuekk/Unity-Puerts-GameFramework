@@ -1,0 +1,59 @@
+"use strict";
+/**
+ * TD_Game — 游戏逻辑层（Layer 3）
+ *
+ * 职责：
+ *   负责塔防游戏的核心玩法逻辑（波次、建造、寻路、经济等）。
+ *   依赖 Framework 层的基础服务与 GameplayAbilitySystem 服务层。
+ *
+ * 生命周期由 GameFramework 统一驱动：
+ *   onInit(framework) → onUpdate(deltaTime) × N → onShutdown()
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TDGameLayer = exports.TD_GAME_MODULE_NAME = void 0;
+const GameplayAbilitySystem_1 = require("../GameplayAbilitySystem");
+const GameModuleManager_1 = require("./GameModuleManager");
+exports.TD_GAME_MODULE_NAME = "TD_Game";
+// ─── TDGameLayer ─────────────────────────────────────────────────────────────
+class TDGameLayer {
+    moduleName = exports.TD_GAME_MODULE_NAME;
+    _framework;
+    _gas;
+    /** 游戏逻辑模块管理器，各子模块通过它获取其它模块与 Framework */
+    _gameModule;
+    // ── 生命周期 ──────────────────────────────────────────────────────────────
+    onInit(framework) {
+        console.log(`[TD_Game] Initializing game layer...`);
+        this._framework = framework;
+        this._gas = framework.getModule(GameplayAbilitySystem_1.GAS_MODULE_NAME);
+        this._gameModule = new GameModuleManager_1.GameModule();
+        //TODO:后续模块在这里注册
+        // 先注册启动模块，再注册其它游戏逻辑模块，模块间通过 gameModule.getModule() 通信
+        this._gameModule
+            .registerGameModule();
+        // .registerModule(new WaveSystem())
+        // .registerModule(new BuildSystem());
+        this._gameModule.init(framework);
+    }
+    onUpdate(deltaTime) {
+        this._gameModule.update(deltaTime);
+    }
+    onShutdown() {
+        this._gameModule.shutdown();
+    }
+    // ── 公开访问器 ────────────────────────────────────────────────────────────
+    /** Framework 基础服务引用，供 TD_Game 子模块使用 */
+    get framework() {
+        return this._framework;
+    }
+    /** GAS 服务层引用，供 TD_Game 子模块使用 */
+    get gas() {
+        return this._gas;
+    }
+    /** 游戏逻辑模块管理器，用于获取已注册的游戏模块（如 WaveSystem、BuildSystem） */
+    get gameModule() {
+        return this._gameModule;
+    }
+}
+exports.TDGameLayer = TDGameLayer;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL1REX0dhbWUvaW5kZXgudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7R0FTRzs7O0FBR0gsb0VBQXFFO0FBQ3JFLDJEQUEwRTtBQUU3RCxRQUFBLG1CQUFtQixHQUFHLFNBQWtCLENBQUM7QUFFdEQsZ0ZBQWdGO0FBRWhGLE1BQWEsV0FBVztJQUVYLFVBQVUsR0FBRywyQkFBbUIsQ0FBQztJQUVsQyxVQUFVLENBQWlCO0lBQzNCLElBQUksQ0FBWTtJQUV4Qix5Q0FBeUM7SUFDakMsV0FBVyxDQUFlO0lBRWxDLHlFQUF5RTtJQUV6RSxNQUFNLENBQUMsU0FBd0I7UUFDM0IsT0FBTyxDQUFDLEdBQUcsQ0FBQyxzQ0FBc0MsQ0FBQyxDQUFDO1FBQ3BELElBQUksQ0FBQyxVQUFVLEdBQUcsU0FBUyxDQUFDO1FBQzVCLElBQUksQ0FBQyxJQUFJLEdBQUcsU0FBUyxDQUFDLFNBQVMsQ0FBVyx1Q0FBZSxDQUFDLENBQUM7UUFFM0QsSUFBSSxDQUFDLFdBQVcsR0FBRyxJQUFJLDhCQUFVLEVBQUUsQ0FBQTtRQUVuQyxnQkFBZ0I7UUFDaEIsc0RBQXNEO1FBQ3RELElBQUksQ0FBQyxXQUFXO2FBQ1gsa0JBQWtCLEVBQUUsQ0FBQztRQUMxQixvQ0FBb0M7UUFDcEMsc0NBQXNDO1FBQ3RDLElBQUksQ0FBQyxXQUFXLENBQUMsSUFBSSxDQUFDLFNBQVMsQ0FBQyxDQUFDO0lBQ3JDLENBQUM7SUFFRCxRQUFRLENBQUMsU0FBaUI7UUFDdEIsSUFBSSxDQUFDLFdBQVcsQ0FBQyxNQUFNLENBQUMsU0FBUyxDQUFDLENBQUM7SUFDdkMsQ0FBQztJQUVELFVBQVU7UUFDTixJQUFJLENBQUMsV0FBVyxDQUFDLFFBQVEsRUFBRSxDQUFDO0lBQ2hDLENBQUM7SUFFRCx3RUFBd0U7SUFFeEUsdUNBQXVDO0lBQ3ZDLElBQUksU0FBUztRQUNULE9BQU8sSUFBSSxDQUFDLFVBQVUsQ0FBQztJQUMzQixDQUFDO0lBRUQsZ0NBQWdDO0lBQ2hDLElBQUksR0FBRztRQUNILE9BQU8sSUFBSSxDQUFDLElBQUksQ0FBQztJQUNyQixDQUFDO0lBRUQsdURBQXVEO0lBQ3ZELElBQUksVUFBVTtRQUNWLE9BQU8sSUFBSSxDQUFDLFdBQVcsQ0FBQztJQUM1QixDQUFDO0NBQ0o7QUFwREQsa0NBb0RDIn0=

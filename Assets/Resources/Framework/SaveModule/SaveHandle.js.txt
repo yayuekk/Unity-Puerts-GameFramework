@@ -1,0 +1,57 @@
+"use strict";
+/**
+ * SaveHandle — 单个存档文件的类型化操作句柄（内部实现）
+ *
+ * 设计特点：
+ *   - 轻量值对象，不持有数据缓存，每次 load / save 均直接触发 IO
+ *   - 通过构造时注入的 storage 与 serializer 实现解耦（依赖注入）
+ *   - fileExt 由 SaveSystem 根据当前模式注入（Dev=".json" / Release=".sav"）
+ *   - 由 SaveModuleHandle.getHandle<T>() 工厂方法创建，不对外暴露构造函数
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SaveHandle = void 0;
+// ─── SaveHandle ───────────────────────────────────────────────────────────────
+class SaveHandle {
+    key;
+    _storage;
+    _serializer;
+    /** 相对于存档根目录的文件路径，如 "Player/slot_0.json" 或 "Player/slot_0.sav" */
+    _relativePath;
+    constructor(moduleName, fileName, storage, serializer, fileExt) {
+        this.key = { moduleName, fileName };
+        this._storage = storage;
+        this._serializer = serializer;
+        this._relativePath = `${moduleName}/${fileName}${fileExt}`;
+    }
+    // ── ISaveHandle ───────────────────────────────────────────────────────────
+    exists() {
+        return this._storage.fileExists(this._relativePath);
+    }
+    load() {
+        const raw = this._storage.read(this._relativePath);
+        if (raw === null)
+            return undefined;
+        try {
+            return this._serializer.deserialize(raw);
+        }
+        catch (e) {
+            console.error(`[SaveHandle] Deserialize failed: "${this._relativePath}"`, e);
+            return undefined;
+        }
+    }
+    save(data) {
+        try {
+            const raw = this._serializer.serialize(data);
+            this._storage.write(this._relativePath, raw);
+        }
+        catch (e) {
+            console.error(`[SaveHandle] Serialize failed: "${this._relativePath}"`, e);
+            throw e;
+        }
+    }
+    delete() {
+        this._storage.deleteFile(this._relativePath);
+    }
+}
+exports.SaveHandle = SaveHandle;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU2F2ZUhhbmRsZS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1NhdmVNb2R1bGUvU2F2ZUhhbmRsZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7O0dBUUc7OztBQUlILGlGQUFpRjtBQUVqRixNQUFhLFVBQVU7SUFFVixHQUFHLENBQVU7SUFFTCxRQUFRLENBQW9CO0lBQzVCLFdBQVcsQ0FBb0I7SUFDaEQsaUVBQWlFO0lBQ2hELGFBQWEsQ0FBUztJQUV2QyxZQUNJLFVBQWtCLEVBQ2xCLFFBQWtCLEVBQ2xCLE9BQXdCLEVBQ3hCLFVBQTJCLEVBQzNCLE9BQWtCO1FBRWxCLElBQUksQ0FBQyxHQUFHLEdBQWUsRUFBRSxVQUFVLEVBQUUsUUFBUSxFQUFFLENBQUM7UUFDaEQsSUFBSSxDQUFDLFFBQVEsR0FBVSxPQUFPLENBQUM7UUFDL0IsSUFBSSxDQUFDLFdBQVcsR0FBTyxVQUFVLENBQUM7UUFDbEMsSUFBSSxDQUFDLGFBQWEsR0FBSyxHQUFHLFVBQVUsSUFBSSxRQUFRLEdBQUcsT0FBTyxFQUFFLENBQUM7SUFDakUsQ0FBQztJQUVELDZFQUE2RTtJQUU3RSxNQUFNO1FBQ0YsT0FBTyxJQUFJLENBQUMsUUFBUSxDQUFDLFVBQVUsQ0FBQyxJQUFJLENBQUMsYUFBYSxDQUFDLENBQUM7SUFDeEQsQ0FBQztJQUVELElBQUk7UUFDQSxNQUFNLEdBQUcsR0FBRyxJQUFJLENBQUMsUUFBUSxDQUFDLElBQUksQ0FBQyxJQUFJLENBQUMsYUFBYSxDQUFDLENBQUM7UUFDbkQsSUFBSSxHQUFHLEtBQUssSUFBSTtZQUFFLE9BQU8sU0FBUyxDQUFDO1FBQ25DLElBQUksQ0FBQztZQUNELE9BQU8sSUFBSSxDQUFDLFdBQVcsQ0FBQyxXQUFXLENBQUksR0FBRyxDQUFDLENBQUM7UUFDaEQsQ0FBQztRQUFDLE9BQU8sQ0FBQyxFQUFFLENBQUM7WUFDVCxPQUFPLENBQUMsS0FBSyxDQUNULHFDQUFxQyxJQUFJLENBQUMsYUFBYSxHQUFHLEVBQUUsQ0FBQyxDQUNoRSxDQUFDO1lBQ0YsT0FBTyxTQUFTLENBQUM7UUFDckIsQ0FBQztJQUNMLENBQUM7SUFFRCxJQUFJLENBQUMsSUFBTztRQUNSLElBQUksQ0FBQztZQUNELE1BQU0sR0FBRyxHQUFHLElBQUksQ0FBQyxXQUFXLENBQUMsU0FBUyxDQUFDLElBQUksQ0FBQyxDQUFDO1lBQzdDLElBQUksQ0FBQyxRQUFRLENBQUMsS0FBSyxDQUFDLElBQUksQ0FBQyxhQUFhLEVBQUUsR0FBRyxDQUFDLENBQUM7UUFDakQsQ0FBQztRQUFDLE9BQU8sQ0FBQyxFQUFFLENBQUM7WUFDVCxPQUFPLENBQUMsS0FBSyxDQUNULG1DQUFtQyxJQUFJLENBQUMsYUFBYSxHQUFHLEVBQUUsQ0FBQyxDQUM5RCxDQUFDO1lBQ0YsTUFBTSxDQUFDLENBQUM7UUFDWixDQUFDO0lBQ0wsQ0FBQztJQUVELE1BQU07UUFDRixJQUFJLENBQUMsUUFBUSxDQUFDLFVBQVUsQ0FBQyxJQUFJLENBQUMsYUFBYSxDQUFDLENBQUM7SUFDakQsQ0FBQztDQUNKO0FBeERELGdDQXdEQyJ9

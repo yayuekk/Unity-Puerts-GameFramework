@@ -1,0 +1,254 @@
+"use strict";
+/**
+ * PoolSystem — 对象池系统核心模块
+ *
+ * 职责：
+ *   - 管理所有具名对象池的注册、查询、获取、归还与清除
+ *   - 集成 ComputingSystem：每帧读取 cpuLoad 驱动分帧预热调度器
+ *   - 集成 ResSystem：通过 createGoPoolAsync 统一管理 Prefab 资产生命周期
+ *   - 通过空闲计时器自动清除长期不使用（引用计数归零）的对象池
+ *
+ * 关键行为：
+ *   - get()              池不存在时自动创建（需传入工厂）
+ *   - return()           池不存在时直接销毁对象（factory.onDestroy 或 Object.Destroy）
+ *   - createGoPoolAsync  加载 Prefab → 建池 → 分帧预热，池销毁时自动卸载资产
+ *   - 引用计数归零 + 持续空闲 autoDestroyDelay 秒 → 池被自动销毁（可配置）
+ *
+ * 注册示例（src/index.cts，注意 ResSystem 须先于 PoolSystem 注册）：
+ *   framework
+ *     .registerModule(new ResSystem())
+ *     .registerModule(new PoolSystem());
+ *
+ * 获取示例：
+ *   const pool = framework.getModule<IPoolSystem>("PoolSystem");
+ *   // 异步创建 GameObject 池（推荐）
+ *   const goPool = await pool.createGoPoolAsync("Prefabs/Bullet", { name: "BulletGO" });
+ *   // 普通对象
+ *   const bullet = pool.get("Bullet", bulletFactory);
+ *   pool.return(bullet, "Bullet");
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PoolSystem = void 0;
+const PoolFactories_1 = require("./PoolFactories");
+const ObjectPool_1 = require("./ObjectPool");
+const PoolWarmup_1 = require("./PoolWarmup");
+// PuerTS C# 桥接：与 ResSystem 一致，不依赖可能未注入的全局 CS
+const _CS = (function () {
+    try {
+        return require("csharp");
+    }
+    catch {
+        return typeof globalThis !== "undefined" ? globalThis.CS : undefined;
+    }
+})();
+// ─── PoolSystem ───────────────────────────────────────────────────────────────
+class PoolSystem {
+    moduleName = "PoolSystem";
+    _pools = new Map();
+    _scheduler = new PoolWarmup_1.PoolWarmupScheduler();
+    _computing;
+    _resSys;
+    _log;
+    // ── IModule 生命周期 ──────────────────────────────────────────────────────
+    onInit(fw) {
+        const logSys = fw.tryGetModule("LogSystem");
+        this._log = logSys?.registerChannel("pool", "PoolSystem");
+        this._computing = fw.tryGetModule("ComputingSystem");
+        this._resSys = fw.tryGetModule("ResSystem");
+        if (!this._computing) {
+            this._log?.warn("ComputingSystem not found. Warmup will use default budget (cpuLoad = 0).");
+        }
+        if (!this._resSys) {
+            this._log?.warn("ResSystem not found. createGoPoolAsync() will throw if called.");
+        }
+        this._log?.info("PoolSystem initialized.");
+    }
+    onUpdate(dt) {
+        const cpuLoad = this._computing?.cpuLoad ?? 0;
+        // 分帧预热
+        this._scheduler.update(cpuLoad);
+        // 空闲自动销毁检测（先收集，再删除，避免迭代中修改 Map）
+        let toDestroy = null;
+        for (const [name, pool] of this._pools) {
+            if (pool.updateIdleTimer(dt)) {
+                if (toDestroy === null)
+                    toDestroy = [];
+                toDestroy.push(name);
+            }
+        }
+        if (toDestroy) {
+            for (const name of toDestroy) {
+                this._destroyPool(name, "idle-timeout");
+            }
+        }
+    }
+    onShutdown() {
+        this._scheduler.cancelAll();
+        this.clearAllPools();
+        this._log?.info("PoolSystem shutdown.");
+    }
+    // ── IPoolSystem — 池管理 ──────────────────────────────────────────────────
+    createPool(config) {
+        const existing = this._pools.get(config.name);
+        if (existing) {
+            this._log?.warn(`createPool: pool "${config.name}" already exists, returning existing.`);
+            return existing;
+        }
+        const pool = new ObjectPool_1.ObjectPool(config);
+        this._pools.set(config.name, pool);
+        this._log?.info(`createPool: "${config.name}" created` +
+            ` (maxCap=${config.maxCapacity ?? 0}` +
+            `, autoDestroy=${config.autoDestroyDelay ?? 60}s).`);
+        if (config.initialCapacity && config.initialCapacity > 0) {
+            this._scheduler.schedule(pool, config.initialCapacity);
+            this._log?.debug(`createPool: queued warmup ×${config.initialCapacity} for "${config.name}".`);
+        }
+        return pool;
+    }
+    hasPool(name) {
+        return this._pools.has(name);
+    }
+    getPool(name) {
+        return this._pools.get(name);
+    }
+    async createGoPoolAsync(key, config, poolRootParent, activeParent) {
+        if (!this._resSys) {
+            throw new Error("[PoolSystem] createGoPoolAsync: ResSystem is not available. " +
+                "Register ResSystem before PoolSystem.");
+        }
+        // 加载前先检查：避免同步重入时的重复创建
+        const preExisting = this._pools.get(config.name);
+        if (preExisting) {
+            this._log?.warn(`createGoPoolAsync: pool "${config.name}" already exists, returning existing.`);
+            return preExisting;
+        }
+        this._log?.debug(`createGoPoolAsync: loading prefab "${key}" for pool "${config.name}".`);
+        const handle = await this._resSys.loadAsync(key);
+        this._log?.info(`createGoPoolAsync: asset loaded key="${key}", isLoaded=${!!handle?.isLoaded}, hasAsset=${handle?.asset != null}.`);
+        // await 期间可能有另一个同名 createGoPoolAsync 完成了创建（并发竞态），
+        // 此时必须释放本次加载的 handle，否则引用计数永远无法归零。
+        const postExisting = this._pools.get(config.name);
+        if (postExisting) {
+            this._log?.warn(`createGoPoolAsync: pool "${config.name}" was created concurrently. ` +
+                `Releasing duplicate handle for key="${key}".`);
+            handle.release();
+            return postExisting;
+        }
+        // poolRootParent 已弃用：池根节点统一在 DontDestroyOnLoad，此参数仅保留以兼容旧调用签名
+        const factory = new PoolFactories_1.ResGameObjectFactory(handle, config.name, poolRootParent, activeParent);
+        const pool = this.createPool({ ...config, factory });
+        // 立即执行一档预热，避免首帧 get() 时池仍为空、场景中看不到预热对象
+        this._scheduler.update(0);
+        this._log?.info(`createGoPoolAsync: pool "${config.name}" ready (key="${key}"). available=${pool.available}, total=${pool.total}.`);
+        return pool;
+    }
+    // ── IPoolSystem — 对象操作 ────────────────────────────────────────────────
+    get(name, factory) {
+        let pool = this._pools.get(name);
+        if (!pool) {
+            this._log?.debug(`get: pool "${name}" not found, auto-creating.`);
+            pool = new ObjectPool_1.ObjectPool({ name, factory });
+            this._pools.set(name, pool);
+        }
+        return pool.get();
+    }
+    return(item, name, factory) {
+        // 若未指定池名，以对象构造函数名兜底
+        const poolName = name
+            ?? (item != null ? item.constructor?.name : undefined)
+            ?? "unknown";
+        const pool = this._pools.get(poolName);
+        if (pool) {
+            pool.return(item);
+            this._log?.debug(`return: "${poolName}" ← item returned.`);
+        }
+        else {
+            this._log?.warn(`return: pool "${poolName}" not found. Destroying item.`);
+            this._tryDestroyItem(item, factory);
+        }
+    }
+    // ── IPoolSystem — 预热 ────────────────────────────────────────────────────
+    warmup(name, count) {
+        const pool = this._pools.get(name);
+        if (!pool) {
+            throw new Error(`[PoolSystem] warmup: pool "${name}" does not exist. ` +
+                `Call createPool() first.`);
+        }
+        if (count <= 0) {
+            throw new RangeError(`[PoolSystem] warmup: count must be > 0, got ${count}.`);
+        }
+        const handle = this._scheduler.schedule(pool, count);
+        this._log?.debug(`warmup: queued ×${count} for "${name}".`);
+        return handle;
+    }
+    // ── IPoolSystem — 清除 ────────────────────────────────────────────────────
+    clearPool(name) {
+        if (!this._pools.has(name)) {
+            this._log?.warn(`clearPool: pool "${name}" not found, ignored.`);
+            return;
+        }
+        this._destroyPool(name, "manual");
+    }
+    clearAllPools() {
+        for (const name of Array.from(this._pools.keys())) {
+            this._destroyPool(name, "manual");
+        }
+        this._log?.info("clearAllPools: all pools cleared.");
+    }
+    // ── IPoolSystem — 统计 ────────────────────────────────────────────────────
+    getAllStats() {
+        const stats = [];
+        for (const pool of this._pools.values()) {
+            const s = pool.getStats();
+            stats.push({
+                ...s,
+                isWarming: this._scheduler.isPoolWarming(pool.name),
+            });
+        }
+        return stats;
+    }
+    // ── 私有辅助 ──────────────────────────────────────────────────────────────
+    /**
+     * 统一销毁流程：
+     *   1. 调用 pool.destroy()（清空闲置对象并标记死亡）
+     *   2. 从注册表中移除
+     */
+    _destroyPool(name, reason) {
+        const pool = this._pools.get(name);
+        if (!pool)
+            return;
+        pool.destroy();
+        this._pools.delete(name);
+        this._log?.info(`pool "${name}" destroyed (reason: ${reason}).`);
+    }
+    /**
+     * 在无对应对象池时尝试销毁游离对象。
+     *
+     * 优先级：
+     *   1. 调用提供的 factory.onDestroy(item)
+     *   2. 无工厂时，若对象为 CS Unity Object（判断 GetType 方法），调用 Object.Destroy
+     *   3. 否则仅丢弃引用，由 JS GC 回收
+     */
+    _tryDestroyItem(item, factory) {
+        if (factory) {
+            try {
+                factory.onDestroy(item);
+            }
+            catch (e) {
+                this._log?.error(`_tryDestroyItem: factory.onDestroy threw: ${e}`);
+            }
+            return;
+        }
+        if (item != null && typeof item.GetType === "function") {
+            try {
+                _CS.UnityEngine.Object.Destroy(item);
+            }
+            catch (e) {
+                this._log?.error(`_tryDestroyItem: Object.Destroy threw: ${e}`);
+            }
+        }
+        // 普通 JS 对象交由 GC，此处无需操作
+    }
+}
+exports.PoolSystem = PoolSystem;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiUG9vbFN5c3RlbS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1Bvb2xNb2R1bGUvUG9vbFN5c3RlbS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQTJCRzs7O0FBU0gsbURBQStEO0FBQy9ELDZDQUE0RDtBQUM1RCw2Q0FBNEQ7QUFXNUQsNkNBQTZDO0FBQzdDLE1BQU0sR0FBRyxHQUFRLENBQUM7SUFDZCxJQUFJLENBQUM7UUFDRCxPQUFPLE9BQU8sQ0FBQyxRQUFRLENBQUMsQ0FBQztJQUM3QixDQUFDO0lBQUMsTUFBTSxDQUFDO1FBQ0wsT0FBTyxPQUFPLFVBQVUsS0FBSyxXQUFXLENBQUMsQ0FBQyxDQUFFLFVBQWtCLENBQUMsRUFBRSxDQUFDLENBQUMsQ0FBQyxTQUFTLENBQUM7SUFDbEYsQ0FBQztBQUNMLENBQUMsQ0FBQyxFQUFFLENBQUM7QUFFTCxpRkFBaUY7QUFFakYsTUFBYSxVQUFVO0lBRVYsVUFBVSxHQUFHLFlBQVksQ0FBQztJQUVsQixNQUFNLEdBQXFDLElBQUksR0FBRyxFQUFFLENBQUM7SUFDckQsVUFBVSxHQUFpQyxJQUFJLGdDQUFtQixFQUFFLENBQUM7SUFFOUUsVUFBVSxDQUFvQjtJQUM5QixPQUFPLENBQWlCO0lBQ3hCLElBQUksQ0FBMkI7SUFFdkMseUVBQXlFO0lBRXpFLE1BQU0sQ0FBQyxFQUFpQjtRQUNwQixNQUFNLE1BQU0sR0FBRyxFQUFFLENBQUMsWUFBWSxDQUFZLFdBQVcsQ0FBQyxDQUFDO1FBQ3ZELElBQUksQ0FBQyxJQUFJLEdBQU8sTUFBTSxFQUFFLGVBQWUsQ0FBQyxNQUFNLEVBQUUsWUFBWSxDQUFDLENBQUM7UUFDOUQsSUFBSSxDQUFDLFVBQVUsR0FBRyxFQUFFLENBQUMsWUFBWSxDQUFrQixpQkFBaUIsQ0FBQyxDQUFDO1FBQ3RFLElBQUksQ0FBQyxPQUFPLEdBQU0s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

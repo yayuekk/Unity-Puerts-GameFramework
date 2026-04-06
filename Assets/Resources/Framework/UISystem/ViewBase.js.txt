@@ -1,0 +1,154 @@
+"use strict";
+/**
+ * ViewBase — MVC View 层基类
+ *
+ * 继承 UINodeBase，自动获得：
+ *   Unity 事件绑定 / EventModule 事件管理 / 子 UIComponent 管理 / Unity 快捷工具
+ *
+ * 职责（ViewBase 自身）：
+ *   - 持有并暴露 IUIContext（GO、resName、config、isVisible）
+ *   - 定义 View 的完整生命周期钩子，供业务 View 子类实现
+ *
+ * ─── 生命周期流程 ─────────────────────────────────────────────────────────────
+ *
+ *   ┌─ 首次打开 ────────────────────────────────────────────────────────────────┐
+ *   │  _setup(ctx) → _onInit()                                                  │
+ *   │    → onCreate()          ← 获取 cfg 引用、绑定 Unity 事件（bindClick 等）  │
+ *   │  → Service.onPreload(Fresh)                                                │
+ *   │  → GO.SetActive(true)                                                      │
+ *   │  → _onOpen(Fresh)                                                          │
+ *   │    → onRegisterEvents()  ← 注册 EventModule 可见性事件（addOpenEvent）     │
+ *   │    → onOpen(Fresh)       ← 完整数据初始化                                  │
+ *   └───────────────────────────────────────────────────────────────────────────┘
+ *
+ *   ┌─ 关闭（缓存模式 isCached=true）────────────────────────────────────────────┐
+ *   │  _onClose()                                                                │
+ *   │    → onClose()                ← 停止动画、暂停音效等                       │
+ *   │    → onUnregisterEvents()     ← 手动清理未追踪的 CS 事件订阅（可选）       │
+ *   │    → _cleanupOpenComponents() ← 框架自动销毁 createOpenComponent 创建的组件│
+ *   │    → _cleanupOpenGoHandles()  ← 框架自动释放 createOpenGameObject 创建的GO │
+ *   │    → _cleanupVisibilityEvents() ← 框架自动注销 addOpenEvent 注册的事件     │
+ *   │  → GO.SetActive(false)                                                     │
+ *   └───────────────────────────────────────────────────────────────────────────┘
+ *
+ *   ┌─ 再次打开（从缓存恢复）────────────────────────────────────────────────────┐
+ *   │  Service.onPreload(FromCache) → GO.SetActive(true)                        │
+ *   │  → _onOpen(FromCache)                                                      │
+ *   │    → onRegisterEvents()  ← 重新注册可见性事件                              │
+ *   │    → onOpen(FromCache)   ← 仅刷新变化数据                                 │
+ *   └───────────────────────────────────────────────────────────────────────────┘
+ *
+ *   ┌─ 销毁（非缓存关闭 / 缓存超时 / 强制销毁）──────────────────────────────────┐
+ *   │  [onClose] → Service.onDestroy                                            │
+ *   │  → _onDestroy()                                                            │
+ *   │    → open-scope 组件/GO 销毁（兜底：防止 destroy 未经 close 的情况）       │
+ *   │    → 生命周期 组件/GO 销毁 → Unity 事件解绑                                │
+ *   │    → 可见性事件注销 → 生命周期事件注销                                     │
+ *   │    → onDestroy()                                                           │
+ *   │  → goHandle.release()                                                     │
+ *   └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * ─── 事件管理规则 ─────────────────────────────────────────────────────────────
+ *
+ *   bindClick / bindEvent    — Unity 事件绑定，onDestroy 时统一解绑。
+ *   addEvent()               — 生命周期作用域，onDestroy 时注销。
+ *   addOpenEvent()           — 可见性作用域，onClose 后自动注销；适合缓存界面。
+ *   onRegisterEvents()       — 每次 onOpen 前调用，集中放置 addOpenEvent 调用。
+ *   onUnregisterEvents()     — 每次 onClose 后调用，镜像清理（可选重写）。
+ *
+ * ─── 资源管理规则 ─────────────────────────────────────────────────────────────
+ *
+ *   createComponent()        — 生命周期作用域子组件，onDestroy 时自动销毁。
+ *   createOpenComponent()    — 可见性作用域子组件，onClose 时自动销毁；适合缓存界面。
+ *   createGameObject()       — 生命周期作用域 GO，onDestroy 时自动释放。
+ *   createOpenGameObject()   — 可见性作用域 GO，onClose 时自动释放；适合缓存界面。
+ *   destroy*() 系列          — 提前手动释放，从追踪列表移除，不会重复销毁。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ViewBase = void 0;
+const UINodeBase_1 = require("./UINodeBase");
+class ViewBase extends UINodeBase_1.UINodeBase {
+    _ctx;
+    // ── 只读属性 ──────────────────────────────────────────────────────────────
+    /** 对应的 C# GameObject（由 UISystem 注入，销毁后 goHandle.release() 使其失效） */
+    get go() { return this._ctx?.goHandle?.asset ?? null; }
+    /** Addressable 资源名（等于 UISystem.openUI() 传入的 name） */
+    get resName() { return this._ctx?.name ?? ""; }
+    /** 运行时配置（层级、缓存策略等），初始化后不变 */
+    get config() { return this._ctx?.config ?? null; }
+    /** 当前是否处于可见（激活）状态 */
+    get isVisible() { return this._ctx?.isVisible ?? false; }
+    // ── C# 配置访问 ───────────────────────────────────────────────────────────
+    /**
+     * 返回此 View 的 C# UIConfig 实例（挂在 GO 根节点上）。
+     * UINodeBase.cfg 通过此方法获取配置对象，懒加载后缓存。
+     */
+    _getCsConfig() {
+        const g = this.go;
+        if (g == null)
+            return null;
+        try {
+            return CS.GameFramework.UI.UIRoot.GetUIConfig(g);
+        }
+        catch {
+            return null;
+        }
+    }
+    // ── 内部生命周期（由 UISystem 调用，业务代码不应直接调用） ─────────────────
+    /** [框架内部] 注入上下文并重置数据读取器缓存，必须在 _onInit 之前完成。 */
+    _setup(ctx) {
+        this._ctx = ctx;
+        this._resetDataReader();
+    }
+    /** [框架内部] 触发 onCreate()，仅调用一次。 */
+    async _onInit() {
+        await this.onCreate();
+    }
+    /**
+     * [框架内部] 触发可见性事件注册与 onOpen()，每次显示时调用。
+     *   1. onRegisterEvents() — 注册本次可见期间的 EventModule 监听器
+     *   2. onOpen(mode)       — 完整或增量数据初始化
+     */
+    async _onOpen(mode) {
+        await this.onRegisterEvents();
+        await this.onOpen(mode);
+    }
+    /**
+     * [框架内部] 触发关闭流程，每次隐藏时调用。
+     *   1. onClose()                  — 业务清理（停动画、暂停音效等）
+     *   2. onUnregisterEvents()       — 可选的手动事件清理钩子
+     *   3. _cleanupOpenComponents()   — 框架销毁所有 createOpenComponent 创建的子组件
+     *   4. _cleanupOpenGoHandles()    — 框架释放所有 createOpenGameObject 创建的 GO
+     *   5. _cleanupVisibilityEvents() — 框架注销所有 addOpenEvent 注册的监听器
+     */
+    _onClose() {
+        this.onClose();
+        this.onUnregisterEvents();
+        this._cleanupOpenComponents();
+        this._cleanupOpenGoHandles();
+        this._cleanupVisibilityEvents();
+    }
+    /**
+     * [框架内部] 触发完整销毁流程：
+     *   1. _cleanupOpenComponents()   — 兜底销毁可见性作用域子组件（防止 destroy 未经 close）
+     *   2. _cleanupOpenGoHandles()    — 兜底释放可见性作用域 GO
+     *   3. _cleanupComponents()       — 递归销毁生命周期作用域子 UIComponent 并释放资源句柄
+     *   4. _cleanupGoHandles()        — 释放生命周期作用域 GameObject 资源句柄
+     *   5. _cleanupUnityBindings()    — 解绑所有已追踪的 Unity 事件（bindClick / bindEvent）
+     *   6. _cleanupVisibilityEvents() — 注销所有可见性作用域事件（addOpenEvent）
+     *   7. _cleanupEvents()           — 注销所有生命周期作用域事件（addEvent）
+     *   8. onDestroy()
+     */
+    _onDestroy() {
+        this._cleanupOpenComponents();
+        this._cleanupOpenGoHandles();
+        this._cleanupComponents();
+        this._cleanupGoHandles();
+        this._cleanupUnityBindings();
+        this._cleanupVisibilityEvents();
+        this._cleanupEvents();
+        this.onDestroy();
+    }
+}
+exports.ViewBase = ViewBase;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVmlld0Jhc2UuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9VSVN5c3RlbS9WaWV3QmFzZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7R0FnRUc7OztBQUdILDZDQUEwQztBQUkxQyxNQUFzQixRQUFTLFNBQVEsdUJBQVU7SUFFckMsSUFBSSxDQUFjO0lBRTFCLHlFQUF5RTtJQUV6RSxtRUFBbUU7SUFDbkUsSUFBYSxFQUFFLEtBQVUsT0FBTyxJQUFJLENBQUMsSUFBSSxFQUFFLFFBQVEsRUFBRSxLQUFLLElBQUksSUFBSSxDQUFDLENBQUMsQ0FBQztJQUVyRSxxREFBcUQ7SUFDckQsSUFBSSxPQUFPLEtBQWEsT0FBTyxJQUFJLENBQUMsSUFBSSxFQUFFLElBQUksSUFBSSxFQUFFLENBQUMsQ0FBQyxDQUFDO0lBRXZELDZCQUE2QjtJQUM3QixJQUFJLE1BQU0sS0FBOEIsT0FBTyxJQUFJLENBQUMsSUFBSSxFQUFFLE1BQU0sSUFBSSxJQUFJLENBQUMsQ0FBQyxDQUFDO0lBRTNFLHFCQUFxQjtJQUNyQixJQUFJLFNBQVMsS0FBYyxPQUFPLElBQUksQ0FBQyxJQUFJLEVBQUUsU0FBUyxJQUFJLEtBQUssQ0FBQyxDQUFDLENBQUM7SUFFbEUseUVBQXlFO0lBRXpFOzs7T0FHRztJQUNnQixZQUFZO1FBQzNCLE1BQU0sQ0FBQyxHQUFHLElBQUksQ0FBQyxFQUFFLENBQUM7UUFDbEIsSUFBSSxDQUFDLElBQUksSUFBSTtZQUFFLE9BQU8sSUFBSSxDQUFDO1FBQzNCLElBQUksQ0FBQztZQUNELE9BQU8sRUFBRSxDQUFDLGFBQWEsQ0FBQyxFQUFFLENBQUMsTUFBTSxDQUFDLFdBQVcsQ0FBQyxDQUFDLENBQUMsQ0FBQztRQUNyRCxDQUFDO1FBQUMsTUFBTSxDQUFDO1lBQ0wsT0FBTyxJQUFJLENBQUM7UUFDaEIsQ0FBQztJQUNMLENBQUM7SUFFRCx3REFBd0Q7SUFFeEQsK0NBQStDO0lBQy9DLE1BQU0sQ0FBQyxHQUFlO1FBQ2xCLElBQUksQ0FBQyxJQUFJLEdBQUcsR0FBRyxDQUFDO1FBQ2hCLElBQUksQ0FBQyxnQkFBZ0IsRUFBRSxDQUFDO0lBQzVCLENBQUM7SUFFRCxrQ0FBa0M7SUFDbEMsS0FBSyxDQUFDLE9BQU87UUFDVCxNQUFNLElBQUksQ0FBQyxRQUFRLEVBQUUsQ0FBQztJQUMxQixDQUFDO0lBRUQ7Ozs7T0FJRztJQUNILEtBQUssQ0FBQyxPQUFPLENBQUMsSUFBZ0I7UUFDMUIsTUFBTSxJQUFJLENBQUMsZ0JBQWdCLEVBQUUsQ0FBQztRQUM5QixNQUFNLElBQUksQ0FBQyxNQUFNLENBQUMsSUFBSSxDQUFDLENBQUM7SUFDNUIsQ0FBQztJQUVEOzs7Ozs7O09BT0c7SUFDSCxRQUFRO1FBQ0osSUFBSSxDQUFDLE9BQU8sRUFBRSxDQUFDO1FBQ2YsSUFBSSxDQUFDLGtCQUFrQixFQUFFLENBQUM7UUFDMUIsSUFBSSxDQUFDLHNCQUFzQixFQUFFLENBQUM7UUFDOUIsSUFBSSxDQUFDLHFCQUFxQixFQUFFLENBQUM7UUFDN0IsSUFBSSxDQUFDLHdCQUF3QixFQUFFLENBQUM7SUFDcEMsQ0FBQztJQUVEOzs7Ozs7Ozs7O09BVUc7SUFDSCxVQUFVO1FBQ04sSUFBSSxDQUFDLHNCQUFzQixFQUFFLENBQUM7UUFDOUIsSUFBSSxDQUFDLHFCQUFxQixFQUFFLENBQUM7UUFDN0IsSUFBSSxDQUFDLGtCQUFrQixFQUFFLENBQUM7UUFDMUIsSUFBSSxDQUFDLGlCQUFpQixFQUFFLENBQUM7UUFDekIsSUFBSSxDQUFDLHFCQUFxQixFQUFFLENBQUM7UUFDN0IsSUFBSSxDQUFDLHdCQUF3QixFQUFFLENBQUM7UUFDaEMsSUFBSSxDQUFDLGNBQWMsRUFBRSxDQUFDO1FBQ3RCLElBQUksQ0FBQyxTQUFTLEVBQUUsQ0FBQztJQUNyQixDQUFDO0NBdUNKO0FBcElELDRCQW9JQyJ9

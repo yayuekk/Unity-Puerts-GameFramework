@@ -1,0 +1,8 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.LogLevel = exports.LogSystem = void 0;
+var LogSystem_1 = require("./LogSystem");
+Object.defineProperty(exports, "LogSystem", { enumerable: true, get: function () { return LogSystem_1.LogSystem; } });
+var LogTypes_1 = require("./LogTypes");
+Object.defineProperty(exports, "LogLevel", { enumerable: true, get: function () { return LogTypes_1.LogLevel; } });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9Mb2dNb2R1bGUvaW5kZXgudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6Ijs7O0FBQUEseUNBQXdDO0FBQS9CLHNHQUFBLFNBQVMsT0FBQTtBQUNsQix1Q0FBc0M7QUFBN0Isb0dBQUEsUUFBUSxPQUFBIn0=

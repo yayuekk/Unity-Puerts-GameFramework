@@ -1,0 +1,551 @@
+"use strict";
+/**
+ * UISystem — UI 系统核心模块
+ *
+ * 职责：
+ *   - 通过 UIClassRegistry 按类名查找 @UIClass 装饰器自动注册的 MVC 类
+ *   - 驱动 UI 完整生命周期：openUI / closeUI / destroyUI
+ *   - 协调 UIStage 进行层级 Panel Distance 管理
+ *   - 通过 C# UIRoot 读取预制体上的 UIConfig 运行时配置
+ *   - 管理缓存 UI 的超时检测与自动销毁
+ *   - 依赖 ResSystem 进行 Addressable 资源的加载与释放
+ *
+ * ─── MVC 完整生命周期 ─────────────────────────────────────────────────────────
+ *
+ *  【首次打开】
+ *    instantiateAsync → 读取 UIConfig → 挂到层级节点
+ *    → Model.onInit → View.onCreate → Service.onInit
+ *    → Service.onPreload(Fresh)   ← 可重写为网络请求，失败则不打开
+ *    → GO.SetActive(true) → View.onOpen(Fresh)
+ *
+ *  【关闭 - 缓存（isCached=true）】
+ *    View.onClose → GO.SetActive(false) → 记录 hideTimestamp
+ *
+ *  【再次打开（从缓存恢复）】
+ *    Service.onPreload(FromCache) ← 可重写刷新数据
+ *    → GO.SetActive(true) → View.onOpen(FromCache)
+ *
+ *  【关闭 - 非缓存 / 强制销毁 / 缓存超时】
+ *    View.onClose(可见时) → Service.onDestroy → View.onDestroy → Model.onDestroy
+ *    → goHandle.release()
+ *
+ * ─── 使用示例 ─────────────────────────────────────────────────────────────────
+ *
+ *   // 在类定义上添加 @UIClass 装饰器，模块加载时自动注册，无需任何手动调用
+ *   @UIClass export class MainMenuView    extends ViewBase    { ... }
+ *   @UIClass export class MainMenuModel   extends ModelBase   { ... }
+ *   @UIClass export class MainMenuService extends ServiceBase { ... }
+ *
+ *   // 直接 openUI——MVC 类完全由预制体 UIConfig 中的 className 字段驱动
+ *   await uiSystem.openUI("UI_Shop", (name, reason, err) => {
+ *       console.error(`${name} open failed: ${reason}`, err);
+ *   });
+ *
+ *   // 关闭（缓存 → 隐藏；非缓存 → 销毁）
+ *   uiSystem.closeUI("UI_MainMenu");
+ *
+ *   // 强制销毁（无论缓存配置）
+ *   uiSystem.destroyUI("UI_MainMenu");
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UISystem = void 0;
+const UITypes_1 = require("./UITypes");
+const UIClassRegistry_1 = require("./UIClassRegistry");
+const UIStage_1 = require("./UIStage");
+class UISystem {
+    moduleName = "UISystem";
+    // ── 依赖 ──────────────────────────────────────────────────────────────────
+    _resSys;
+    _log;
+    // ── 运行时上下文：资源名 → UIContext ──────────────────────────────────────
+    /** 所有在内存中的 UI（含可见与缓存隐藏两种状态） */
+    _contexts = new Map();
+    /**
+     * 正在加载或预加载中的 UI 名称集合。
+     * 防止并发重复 openUI 调用，所有进入 openUI 的异步路径必须通过 try/finally 清理此集合。
+     */
+    _loadingSet = new Set();
+    /**
+     * 在加载期间收到 closeUI 请求的 UI 名称集合。
+     * 加载完成后若 UI 已可见，将自动补调 closeUI（遵循缓存策略）。
+     * closeUI 优先级低于 destroyUI，后者会将同名条目从此集合移除。
+     */
+    _pendingCloseSet = new Set();
+    /**
+     * 在加载期间收到 destroyUI 请求的 UI 名称集合。
+     * 加载完成后若 UI 在内存中，将自动补调强制销毁。
+     * destroyUI 优先级高于 closeUI，会将同名条目从 _pendingCloseSet 移除。
+     */
+    _pendingDestroySet = new Set();
+    // ── 每层级的 Panel Distance 管理器 ────────────────────────────────────────
+    /** 使用 Map 而非数组，避免 UILayer 枚举值变更时产生静默越界 */
+    _stages = new Map([
+        [UITypes_1.UILayer.Bottom, new UIStage_1.UIStage(UITypes_1.UILayer.Bottom)],
+        [UITypes_1.UILayer.Normal, new UIStage_1.UIStage(UITypes_1.UILayer.Normal)],
+        [UITypes_1.UILayer.Queue, new UIStage_1.UIStage(UITypes_1.UILayer.Queue)],
+        [UITypes_1.UILayer.Pop, new UIStage_1.UIStage(UITypes_1.UILayer.Pop)],
+        [UITypes_1.UILayer.Top, new UIStage_1.UIStage(UITypes_1.UILayer.Top)],
+    ]);
+    // ── 缓存超时检测 ──────────────────────────────────────────────────────────
+    _cacheCheckAccum = 0;
+    /** 每隔 5 秒执行一次缓存超时扫描（ms） */
+    static CACHE_CHECK_INTERVAL_MS = 5_000;
+    // ── IModule 生命周期 ──────────────────────────────────────────────────────
+    onInit(fw) {
+        this._resSys = fw.getModule("ResSystem");
+        const logSys = fw.tryGetModule("LogSystem");
+        this._log = logSys?.registerChannel("ui", "UISystem");
+        this._log?.info("UISystem initialized.");
+    }
+    onUpdate(deltaTime) {
+        this._cacheCheckAccum += deltaTime * 1000;
+        if (this._cacheCheckAccum >= UISystem.CACHE_CHECK_INTERVAL_MS) {
+            this._cacheCheckAccum = 0;
+            this._checkCacheTimeout();
+        }
+    }
+    onShutdown() {
+        // 逆序静默销毁所有 UI，跳过 onClose（应用关闭，无需动画/音效）
+        const names = Array.from(this._contexts.keys()).reverse();
+        for (const name of names) {
+            this._doDestroy(name, true);
+        }
+        // _doDestroy 已逐一 delete，此处 clear 是防御性兜底
+        this._contexts.clear();
+        this._loadingSet.clear();
+        this._pendingCloseSet.clear();
+        this._pendingDestroySet.clear();
+        this._log?.info("UISystem shutdown.");
+    }
+    // ── 公共 UI 操作 API ──────────────────────────────────────────────────────
+    /**
+     * 打开一个 UI 界面。
+     *
+     * 行为策略：
+     *   - 正在加载中 → 忽略并警告（防竞态）
+     *   - 已缓存隐藏 → 运行 Service.onPreload(FromCache)，成功则恢复显示
+     *   - 已可见     → 提到当前层级栈顶（bringToFront）
+     *   - 未加载     → 实例化 → 初始化 MVC → Service.onPreload(Fresh) → 显示
+     *
+     * onPreload 失败处理：
+     *   - 返回 false → 触发 onFailed(PreloadAborted)，Fresh 时销毁 MVC，FromCache 时保留缓存
+     *   - 抛出异常  → 触发 onFailed(PreloadFailed, error)，同上清理策略
+     *
+     * @param name     Addressable 资源名
+     * @param onFailed 可选失败回调，预加载失败时触发
+     */
+    async openUI(name, onFailed) {
+        // ── 防并发 ────────────────────────────────────────────────────────────
+        if (this._loadingSet.has(name)) {
+            this._log?.warn(`openUI: "${name}" is still opening, duplicate call ignored.`);
+            return;
+        }
+        // ── 已在内存中 ────────────────────────────────────────────────────────
+        const existing = this._contexts.get(name);
+        if (existing) {
+            if (!existing.isVisible) {
+                // 从缓存恢复：需要先预加载（刷新数据），再显示
+                this._loadingSet.add(name);
+                try {
+                    const ok = await this._runPreload(existing, UITypes_1.UIOpenMode.FromCache, onFailed);
+                    if (ok) {
+                        this._showContext(existing);
+                        try {
+                            await existing.view?._onOpen(UITypes_1.UIOpenMode.FromCache);
+                        }
+                        catch (e) {
+                            this._log?.error(`view.onOpen(FromCache) error for "${name}": ${e}`);
+                        }
+                        this._log?.info(`openUI: "${name}" restored from cache.`);
+                    }
+                }
+                finally {
+                    this._loadingSet.delete(name);
+                }
+                // 从缓存恢复期间若收到 close/destroy 请求，在此补执行
+                this._applyPendingActions(name);
+            }
+            else {
+                // 已可见：提到层级栈顶
+                this._stages.get(existing.config.layer).bringToFront(existing);
+                this._log?.info(`openUI: "${name}" already visible, brought to front.`);
+            }
+            return;
+        }
+        // ── 首次加载 ──────────────────────────────────────────────────────────
+        this._loadingSet.add(name);
+        try {
+            await this._doLoadAndOpen(name, onFailed);
+        }
+        finally {
+            // 无论成功、失败、抛出，_loadingSet 均在此清理，保证下次可以重新打开
+            this._loadingSet.delete(name);
+        }
+        // 首次加载期间若收到 close/destroy 请求，在此补执行
+        this._applyPendingActions(name);
+    }
+    /**
+     * 关闭一个 UI 界面。
+     *
+     * 行为策略：
+     *   - 缓存模式（isCached=true）→ 调用 View.onClose，隐藏 GO，记录 hideTimestamp
+     *   - 非缓存（isCached=false）→ 调用 View.onClose 后立即销毁并释放资源
+     *
+     * @param name  UI 资源名
+     */
+    closeUI(name) {
+        // UI 正在加载中：延迟到加载完成后执行（close 优先级低于 destroy）
+        if (this._loadingSet.has(name)) {
+            this._pendingDestroySet.delete(name);
+            this._pendingCloseSet.add(name);
+            this._log?.info(`closeUI: "${name}" is loading; close queued.`);
+            return;
+        }
+        const ctx = this._contexts.get(name);
+        if (!ctx) {
+            this._log?.warn(`closeUI: "${name}" not found.`);
+            return;
+        }
+        if (!ctx.isVisible) {
+            this._log?.warn(`closeUI: "${name}" is already hidden (cached).`);
+            return;
+        }
+        if (ctx.config.isCached) {
+            ctx.view?._onClose();
+            this._hideContext(ctx);
+            ctx.hideTimestamp = Date.now();
+            this._log?.info(`closeUI: "${name}" hidden (cached, timeout=${ctx.config.cacheTimeoutSeconds}s).`);
+        }
+        else {
+            // onClose 在 _doDestroy 内部调用（skipOnClose=false）
+            this._doDestroy(name, false);
+            this._log?.info(`closeUI: "${name}" destroyed.`);
+        }
+    }
+    /**
+     * 强制销毁一个 UI，无论其缓存设置。
+     * - 若当前可见：先调用 View.onClose，再销毁
+     * - 若处于缓存隐藏：直接销毁（onClose 已在 closeUI 时调用过）
+     *
+     * @param name  UI 资源名
+     */
+    destroyUI(name) {
+        // UI 正在加载中：延迟到加载完成后执行（destroy 优先级高于 close）
+        if (this._loadingSet.has(name)) {
+            this._pendingCloseSet.delete(name);
+            this._pendingDestroySet.add(name);
+            this._log?.info(`destroyUI: "${name}" is loading; destroy queued.`);
+            return;
+        }
+        if (!this._contexts.has(name)) {
+            this._log?.warn(`destroyUI: "${name}" not found.`);
+            return;
+        }
+        this._doDestroy(name, false);
+        this._log?.info(`destroyUI: "${name}" force-destroyed.`);
+    }
+    /**
+     * 关闭当前所有可见 UI（遵循各自的缓存策略）。
+     */
+    closeAll() {
+        // 快照 keys，避免 closeUI 修改 Map 时迭代器失效
+        const names = Array.from(this._contexts.keys());
+        for (const name of names) {
+            if (this._contexts.get(name)?.isVisible) {
+                this.closeUI(name);
+            }
+        }
+    }
+    // ── 查询 API ──────────────────────────────────────────────────────────────
+    /** 指定 UI 当前是否可见（GO 激活且在层级栈中） */
+    isVisible(name) {
+        return this._contexts.get(name)?.isVisible ?? false;
+    }
+    /** 指定 UI 是否在内存中（可见或缓存隐藏均算） */
+    isLoaded(name) {
+        return this._contexts.has(name);
+    }
+    /** 指定 UI 当前是否正在加载/预加载中 */
+    isLoading(name) {
+        return this._loadingSet.has(name);
+    }
+    /** 获取指定 UI 的 View 实例（用于跨模块访问，建议谨慎使用） */
+    getView(name) {
+        return this._contexts.get(name)?.view ?? null;
+    }
+    /** 获取指定 UI 的 Model 实例 */
+    getModel(name) {
+        return this._contexts.get(name)?.model ?? null;
+    }
+    // ── 私有 —— 首次加载流程 ──────────────────────────────────────────────────
+    /**
+     * 首次加载并打开一个 UI 的完整流程。
+     * 由 openUI 在 try/finally 中调用，_loadingSet 由外层负责清理。
+     */
+    async _doLoadAndOpen(name, onFailed) {
+        // 实例化 Addressable 预制体
+        let goHandle;
+        try {
+            goHandle = await this._resSys.instantiateAsync(name);
+        }
+        catch (e) {
+            this._log?.error(`openUI: instantiateAsync("${name}") failed: ${e}`);
+            return;
+        }
+        // 立即隐藏，避免 GO 在挂到层级节点之前出现视觉闪烁
+        goHandle.asset.SetActive(false);
+        // 读取预制体根节点上的 C# UIConfig 组件
+        const csConfig = CS.GameFramework.UI.UIRoot.GetUIConfig(goHandle.asset);
+        if (!csConfig) {
+            this._log?.error(`openUI: UIConfig component missing on "${name}". ` +
+                `Attach UIConfig to the prefab root.`);
+            goHandle.release();
+            return;
+        }
+        const config = {
+            layer: csConfig.layer,
+            isCached: csConfig.isCached,
+            cacheTimeoutSeconds: csConfig.cacheTimeoutSeconds,
+            viewClassName: csConfig.viewClassName,
+            modelClassName: csConfig.modelClassName,
+            serviceClassName: csConfig.serviceClassName,
+        };
+        // 将 GO 挂到对应层级的根节点下（SetParent false = 不保留世界坐标）
+        const uiRoot = CS.GameFramework.UI.UIRoot.Instance;
+        const layerRoot = uiRoot.GetLayerRoot(config.layer);
+        goHandle.asset.transform.SetParent(layerRoot, false);
+        // ── 从全局 UIClassRegistry 按类名解析 MVC 构造函数 ───────────────────
+        // 类在定义处通过 @UIClass 装饰器自动注册，此处只做查找。
+        const viewCtor = config.viewClassName
+            ? (0, UIClassRegistry_1.getUIClassCtor)(config.viewClassName)
+            : undefined;
+        if (!viewCtor) {
+            this._log?.error(`openUI: "${name}" - viewClassName "${config.viewClassName}" not found in registry. ` +
+                `Add @UIClass decorator to the class definition and ensure the module is imported.`);
+            goHandle.release();
+            return;
+        }
+        const modelCtor = config.modelClassName
+            ? (0, UIClassRegistry_1.getUIClassCtor)(config.modelClassName)
+            : undefined;
+        const serviceCtor = config.serviceClassName
+            ? (0, UIClassRegistry_1.getUIClassCtor)(config.serviceClassName)
+            : undefined;
+        // ── 构建 MVC ──────────────────────────────────────────────────────────
+        const view = new viewCtor();
+        const model = modelCtor ? new modelCtor() : null;
+        const service = serviceCtor ? new serviceCtor() : null;
+        const ctx = {
+            name,
+            config,
+            goHandle,
+            view,
+            model,
+            service,
+            hideTimestamp: 0,
+            isVisible: false,
+        };
+        // 注入上下文（必须在 onInit 前完成）
+        view._setup(ctx);
+        model?._setup(ctx);
+        service?._setup(ctx, view, model);
+        // ── 按顺序初始化 MVC ──────────────────────────────────────────────────
+        // Model 最先，确保 View.onCreate 可读到已就绪的数据
+        try {
+            model?._onInit();
+        }
+        catch (e) {
+            this._log?.error(`model.onInit error for "${name}": ${e}`);
+        }
+        try {
+            await view._onInit();
+        }
+        catch (e) {
+            this._log?.error(`view.onCreate error for "${name}": ${e}`);
+        }
+        try {
+            service?._onInit();
+        }
+        catch (e) {
+            this._log?.error(`service.onInit error for "${name}": ${e}`);
+        }
+        // ── 预加载（网络请求等）─────────────────────────────────────────────
+        const preloadOk = await this._runPreload(ctx, UITypes_1.UIOpenMode.Fresh, onFailed);
+        if (!preloadOk) {
+            // 预加载失败：销毁已初始化的 MVC，释放 GO，不添加到 _contexts
+            this._destroyMVCOrphaned(ctx);
+            return;
+        }
+        // ── 成功 —— 注册到全局表并显示 ───────────────────────────────────────
+        this._contexts.set(name, ctx);
+        this._showContext(ctx);
+        try {
+            await view._onOpen(UITypes_1.UIOpenMode.Fresh);
+        }
+        catch (e) {
+            this._log?.error(`view.onOpen(Fresh) error for "${name}": ${e}`);
+        }
+        this._log?.info(`openUI: "${name}" opened on layer ${config.layer}.`);
+    }
+    // ── 私有 —— 预加载 ────────────────────────────────────────────────────────
+    /**
+     * 调用 Service.onPreload()，捕获所有异常并统一触发 onFailed 回调。
+     *
+     * @returns true = 可以打开；false = 已处理失败（onFailed 已调用）
+     */
+    async _runPreload(ctx, mode, onFailed) {
+        if (!ctx.service)
+            return true;
+        try {
+            const ok = await ctx.service._onPreload(mode);
+            if (!ok) {
+                this._log?.warn(`openUI: preload aborted for "${ctx.name}" (onPreload returned false).`);
+                onFailed?.(ctx.name, UITypes_1.UIOpenFailReason.PreloadAborted);
+            }
+            return ok;
+        }
+        catch (e) {
+            const err = e instanceof Error ? e : new Error(String(e));
+            this._log?.error(`openUI: preload failed for "${ctx.name}": ${err}`);
+            onFailed?.(ctx.name, UITypes_1.UIOpenFailReason.PreloadFailed, err);
+            return false;
+        }
+    }
+    // ── 私有 —— 显示/隐藏 ────────────────────────────────────────────────────
+    _showContext(ctx) {
+        const go = ctx.goHandle.asset;
+        if (go != null)
+            go.SetActive(true);
+        ctx.isVisible = true;
+        ctx.hideTimestamp = 0;
+        const pushed = this._stages.get(ctx.config.layer).push(ctx);
+        if (!pushed) {
+            this._log?.error(`_showContext: Layer ${ctx.config.layer} max panel count exceeded ` +
+                `for "${ctx.name}". UI is visible but sortingOrder is unmanaged.`);
+        }
+        this._updateLayerBlocker(ctx.config.layer);
+    }
+    _hideContext(ctx) {
+        const go = ctx.goHandle.asset;
+        if (go != null)
+            go.SetActive(false);
+        ctx.isVisible = false;
+        this._stages.get(ctx.config.layer).remove(ctx);
+        this._updateLayerBlocker(ctx.config.layer);
+    }
+    // ── 私有 —— 销毁 ──────────────────────────────────────────────────────────
+    /**
+     * 销毁一个已注册在 _contexts 中的 UI 上下文。
+     *
+     * @param name         UI 资源名
+     * @param skipOnClose  true = 跳过 onClose（shutdown 时使用）
+     */
+    _doDestroy(name, skipOnClose) {
+        const ctx = this._contexts.get(name);
+        if (!ctx)
+            return;
+        if (ctx.isVisible) {
+            if (!skipOnClose) {
+                try {
+                    ctx.view?._onClose();
+                }
+                catch (e) {
+                    this._log?.error(`view.onClose error for "${name}": ${e}`);
+                }
+            }
+            this._stages.get(ctx.config.layer).remove(ctx);
+            this._updateLayerBlocker(ctx.config.layer);
+        }
+        this._teardownMVC(ctx, name);
+        this._contexts.delete(name);
+    }
+    /**
+     * 销毁一个尚未注册到 _contexts 中的孤立 MVC（预加载失败时使用）。
+     * 跳过 onClose（UI 从未显示过）。
+     */
+    _destroyMVCOrphaned(ctx) {
+        this._teardownMVC(ctx, ctx.name);
+    }
+    /** 执行 MVC 的 onDestroy 调用链，然后释放 goHandle。 */
+    _teardownMVC(ctx, logName) {
+        try {
+            ctx.service?._onDestroy();
+        }
+        catch (e) {
+            this._log?.error(`service.onDestroy error for "${logName}": ${e}`);
+        }
+        try {
+            ctx.view?._onDestroy();
+        }
+        catch (e) {
+            this._log?.error(`view.onDestroy error for "${logName}": ${e}`);
+        }
+        try {
+            ctx.model?._onDestroy();
+        }
+        catch (e) {
+            this._log?.error(`model.onDestroy error for "${logName}": ${e}`);
+        }
+        ctx.goHandle.release();
+    }
+    // ── 私有 —— 层间遮罩 ──────────────────────────────────────────────────────
+    /**
+     * 根据当前层的活跃 UI 数量决定是否激活层间 Blocker。
+     * 层有 UI 显示时激活；清空时关闭。
+     */
+    _updateLayerBlocker(layer) {
+        const uiRoot = CS.GameFramework.UI.UIRoot.Instance;
+        if (!uiRoot)
+            return;
+        uiRoot.SetLayerBlocker(layer, this._stages.get(layer).activeCount > 0);
+    }
+    // ── 私有 —— 延迟操作 ──────────────────────────────────────────────────────
+    /**
+     * 在加载完成后（_loadingSet 已清理）补执行期间收到的 close/destroy 请求。
+     *
+     * 优先级：destroy > close。
+     * 若加载失败（UI 不在 _contexts 中），pending 条目直接清除即可。
+     */
+    _applyPendingActions(name) {
+        if (this._pendingDestroySet.delete(name)) {
+            if (this._contexts.has(name)) {
+                this._doDestroy(name, false);
+                this._log?.info(`destroyUI (deferred): "${name}" destroyed after load.`);
+            }
+        }
+        else if (this._pendingCloseSet.delete(name)) {
+            const ctx = this._contexts.get(name);
+            if (ctx?.isVisible) {
+                this.closeUI(name);
+            }
+            // UI 不可见（加载失败或预加载中止）说明已被清理，无需再 close
+        }
+    }
+    // ── 私有 —— 缓存超时检测 ──────────────────────────────────────────────────
+    /**
+     * 遍历所有缓存隐藏的 UI，超过 cacheTimeoutSeconds 的将被自动销毁。
+     * onClose 已在 closeUI 时调用，此处静默销毁（skipOnClose=true）。
+     */
+    _checkCacheTimeout() {
+        const now = Date.now();
+        const expired = [];
+        for (const [name, ctx] of this._contexts) {
+            // 跳过可见、从未隐藏、以及永不超时（timeout=0）的条目
+            if (ctx.isVisible || ctx.hideTimestamp === 0)
+                continue;
+            if (ctx.config.cacheTimeoutSeconds <= 0)
+                continue;
+            const elapsedSec = (now - ctx.hideTimestamp) / 1000;
+            if (elapsedSec >= ctx.config.cacheTimeoutSeconds) {
+                expired.push(name);
+            }
+        }
+        for (const name of expired) {
+            this._log?.info(`Cache timeout: "${name}" ` +
+                `(${this._contexts.get(name)?.config.cacheTimeoutSeconds}s elapsed), destroying.`);
+            this._doDestroy(name, true);
+        }
+    }
+}
+exports.UISystem = UISystem;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVUlTeXN0ZW0uanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9VSVN5c3RlbS9VSVN5c3RlbS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBK0NHOzs7QUFLSCx1Q0FVbUI7QUFDbkIsdURBQW1EO0FBQ25ELHVDQUFvQztBQUlwQyxNQUFhLFFBQVE7SUFFUixVQUFVLEdBQUcsVUFBVSxDQUFDO0lBRWpDLDJFQUEyRTtJQUVuRSxPQUFPLENBQWM7SUFDckIsSUFBSSxDQUF1QjtJQUVuQyxtRUFBbUU7SUFFbkUsK0JBQStCO0lBQ2QsU0FBUyxHQUFHLElBQUksR0FBRyxFQUFzQixDQUFDO0lBRTNEOzs7T0FHRztJQUNjLFdBQVcsR0FBRyxJQUFJLEdBQUcsRUFBVSxDQUFDO0lBRWpEOzs7O09BSUc7SUFDYyxnQkFBZ0IsR0FBRyxJQUFJLEdBQUcsRUFBVSxDQUFDO0lBRXREOzs7O09BSUc7SUFDYyxrQkFBa0IsR0FBRyxJQUFJLEdBQUcsRUFBVSxDQUFDO0lBRXhELHNFQUFzRTtJQUV0RSwwQ0FBMEM7SUFDekIsT0FBTyxHQUFHLElBQUksR0FBRyxDQUFtQjtRQUNqRCxDQUFDLGlCQUFPLENBQUMsTUFBTSxFQUFFLElBQUksaUJBQU8sQ0FBQyxpQkFBTyxDQUFDLE1BQU0sQ0FBQyxDQUFDO1FBQzdDLENBQUMsaUJBQU8sQ0FBQyxNQUFNLEVBQUUsSUFBSSxpQkFBTyxDQUFDLGlCQUFPLENBQUMsTUFBTSxDQUFDLENBQUM7UUFDN0MsQ0FBQyxpQkFBTyxDQUFDLEtBQUssRUFBRyxJQUFJLGlCQUFPLENBQUMsaUJBQU8sQ0FBQyxLQUFLLENBQUMsQ0FBQztRQUM1QyxDQUFDLGlCQUFPLENBQUMsR0FBRyxFQUFLLElBQUksaUJBQU8sQ0FBQyxpQkFBTyxDQUFDLEdBQUcsQ0FBQyxDQUFDO1FB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

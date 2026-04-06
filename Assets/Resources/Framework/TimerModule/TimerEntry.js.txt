@@ -1,0 +1,12 @@
+"use strict";
+/**
+ * TimerEntry — 计时器内部数据结构（不对外导出）
+ *
+ * 所有字段均可变，由 TimerSystem 在 tick 过程中直接读写，
+ * 避免 readonly 约束导致的无意义类型断言。
+ *
+ * - Frame 类型：interval / elapsed 单位为帧数
+ * - Second / Minute 类型：interval / elapsed 单位为秒（Minute 在创建时已完成转换）
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVGltZXJFbnRyeS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1RpbWVyTW9kdWxlL1RpbWVyRW50cnkudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7OztHQVFHIn0=

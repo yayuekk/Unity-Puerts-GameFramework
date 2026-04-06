@@ -1,0 +1,18 @@
+"use strict";
+/**
+ * StateMachine 模块公共 API 出口
+ *
+ * 使用方式：
+ *   import { StateMachine, StateBase } from "../Framework/StateMachine";
+ *   import type { IStateMachine, IStateBase, TransitionGuard } from "../Framework/StateMachine";
+ *
+ * 或通过 Framework 统一入口：
+ *   import { StateMachine, StateBase } from "../Framework";
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.StateBase = exports.StateMachine = void 0;
+var StateMachine_1 = require("./StateMachine");
+Object.defineProperty(exports, "StateMachine", { enumerable: true, get: function () { return StateMachine_1.StateMachine; } });
+var StateBase_1 = require("./StateBase");
+Object.defineProperty(exports, "StateBase", { enumerable: true, get: function () { return StateBase_1.StateBase; } });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9TdGF0ZU1hY2hpbmUvaW5kZXgudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7R0FTRzs7O0FBRUgsK0NBQStDO0FBQXRDLDRHQUFBLFlBQVksT0FBQTtBQUNyQix5Q0FBNEM7QUFBbkMsc0dBQUEsU0FBUyxPQUFBIn0=

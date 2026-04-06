@@ -1,0 +1,137 @@
+"use strict";
+/**
+ * PoolWarmup — 分帧预热调度器
+ *
+ * 职责：
+ *   - 维护预热任务队列（FIFO），每帧取队首任务执行
+ *   - 根据 ComputingSystem 提供的 cpuLoad 动态调整每帧预热数量：
+ *       cpuLoad ≥ 1.0  →  0 个（本帧完全跳过，避免卡帧）
+ *       cpuLoad ≥ 0.8  →  1 个（CPU 重载，极低预算）
+ *       cpuLoad ≥ 0.6  →  2 个（CPU 高负荷，保守预算）
+ *       cpuLoad ≥ 0.4  →  4 个（CPU 适中，常规预算）
+ *       cpuLoad <  0.4  →  8 个（CPU 轻负载，积极预热）
+ *
+ * 调度策略：
+ *   - FIFO：优先完成最早提交的任务，避免饥饿
+ *   - 每帧仅处理一个任务，保证单帧对象创建数量可控
+ *   - 已取消或对象池已死亡的任务在下一帧自动清理
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PoolWarmupScheduler = exports.WarmupHandle = void 0;
+// ─── WarmupHandle ─────────────────────────────────────────────────────────────
+/** 预热句柄实现，封装任务数据引用以供外部监控与取消 */
+class WarmupHandle {
+    _task;
+    constructor(task) {
+        this._task = task;
+    }
+    get poolName() { return this._task.pool.name; }
+    get totalCount() { return this._task.totalCount; }
+    get completedCount() { return this._task.completedCount; }
+    get isCancelled() { return this._task.cancelled; }
+    get isDone() {
+        return this._task.cancelled
+            || this._task.completedCount >= this._task.totalCount;
+    }
+    cancel() {
+        this._task.cancelled = true;
+    }
+}
+exports.WarmupHandle = WarmupHandle;
+// ─── PoolWarmupScheduler ──────────────────────────────────────────────────────
+class PoolWarmupScheduler {
+    _tasks = [];
+    // ── 任务管理 ──────────────────────────────────────────────────────────────
+    /**
+     * 向队列尾部添加预热任务，返回可监控/取消的句柄。
+     * 若目标池已死亡，任务将在首次 update 时被自动丢弃。
+     */
+    schedule(pool, count) {
+        const task = {
+            pool,
+            totalCount: count,
+            completedCount: 0,
+            cancelled: false,
+        };
+        this._tasks.push(task);
+        return new WarmupHandle(task);
+    }
+    /** 是否存在指定池名称的未完成预热任务 */
+    isPoolWarming(poolName) {
+        return this._tasks.some(t => !t.cancelled && t.pool.isAlive && t.pool.name === poolName);
+    }
+    /** 当前队列中未完成任务数量 */
+    get pendingCount() {
+        return this._tasks.length;
+    }
+    // ── 每帧调度 ──────────────────────────────────────────────────────────────
+    /**
+     * 每帧调用，根据 cpuLoad 执行本帧预热预算。
+     * 每帧仅处理队首一个有效任务，保证创建数量严格受控。
+     *
+     * 完成条件（满足任一即移除任务）：
+     *   1. completedCount 达到 totalCount（正常完成）
+     *   2. warmupSync 实际创建数 < 请求数（pool 已达 maxCapacity，无法继续预热）
+     */
+    update(cpuLoad) {
+        // 先清理队首已失效的任务
+        this._pruneHead();
+        if (this._tasks.length === 0)
+            return;
+        const budget = this._calcBudget(cpuLoad);
+        if (budget <= 0)
+            return;
+        const task = this._tasks[0];
+        const remaining = task.totalCount - task.completedCount;
+        const batchSize = Math.min(budget, remaining);
+        const actualCreated = task.pool.warmupSync(batchSize);
+        task.completedCount += actualCreated;
+        // pool 满容（actualCreated < batchSize）或自然完成，均视为任务结束
+        if (task.completedCount >= task.totalCount || actualCreated < batchSize) {
+            this._tasks.shift();
+        }
+    }
+    /** 取消并清空所有待处理任务（不回滚已完成的对象） */
+    cancelAll() {
+        for (const t of this._tasks) {
+            t.cancelled = true;
+        }
+        this._tasks.length = 0;
+    }
+    // ── 私有辅助 ──────────────────────────────────────────────────────────────
+    /**
+     * 移除队首所有无效任务（已取消 / 对象池已死 / 已完成）。
+     * 保持队列整洁，避免 update 每次都要跳过大量废弃任务。
+     */
+    _pruneHead() {
+        while (this._tasks.length > 0) {
+            const front = this._tasks[0];
+            const isInvalid = front.cancelled ||
+                !front.pool.isAlive ||
+                front.completedCount >= front.totalCount;
+            if (isInvalid) {
+                this._tasks.shift();
+            }
+            else {
+                break;
+            }
+        }
+    }
+    /**
+     * 根据 CPU 负载计算本帧最大预热数量。
+     * 超出 1.0 时返回 0，表示当帧已超预算，完全跳过预热。
+     */
+    _calcBudget(cpuLoad) {
+        if (cpuLoad >= 1.0)
+            return 0;
+        if (cpuLoad >= 0.8)
+            return 1;
+        if (cpuLoad >= 0.6)
+            return 2;
+        if (cpuLoad >= 0.4)
+            return 4;
+        return 8;
+    }
+}
+exports.PoolWarmupScheduler = PoolWarmupScheduler;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiUG9vbFdhcm11cC5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1Bvb2xNb2R1bGUvUG9vbFdhcm11cC50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7R0FnQkc7OztBQWVILGlGQUFpRjtBQUVqRiwrQkFBK0I7QUFDL0IsTUFBYSxZQUFZO0lBRUosS0FBSyxDQUFvQjtJQUUxQyxZQUFZLElBQXVCO1FBQy9CLElBQUksQ0FBQyxLQUFLLEdBQUcsSUFBSSxDQUFDO0lBQ3RCLENBQUM7SUFFRCxJQUFJLFFBQVEsS0FBcUIsT0FBTyxJQUFJLENBQUMsS0FBSyxDQUFDLElBQUksQ0FBQyxJQUFJLENBQUMsQ0FBQyxDQUFDO0lBQy9ELElBQUksVUFBVSxLQUFtQixPQUFPLElBQUksQ0FBQyxLQUFLLENBQUMsVUFBVSxDQUFDLENBQUMsQ0FBQztJQUNoRSxJQUFJLGNBQWMsS0FBZSxPQUFPLElBQUksQ0FBQyxLQUFLLENBQUMsY0FBYyxDQUFDLENBQUMsQ0FBQztJQUNwRSxJQUFJLFdBQVcsS0FBa0IsT0FBTyxJQUFJLENBQUMsS0FBSyxDQUFDLFNBQVMsQ0FBQyxDQUFDLENBQUM7SUFFL0QsSUFBSSxNQUFNO1FBQ04sT0FBTyxJQUFJLENBQUMsS0FBSyxDQUFDLFNBQVM7ZUFDcEIsSUFBSSxDQUFDLEtBQUssQ0FBQyxjQUFjLElBQUksSUFBSSxDQUFDLEtBQUssQ0FBQyxVQUFVLENBQUM7SUFDOUQsQ0FBQztJQUVELE1BQU07UUFDRixJQUFJLENBQUMsS0FBSyxDQUFDLFNBQVMsR0FBRyxJQUFJLENBQUM7SUFDaEMsQ0FBQztDQUNKO0FBckJELG9DQXFCQztBQUVELGlGQUFpRjtBQUVqRixNQUFhLG1CQUFtQjtJQUVYLE1BQU0sR0FBcUIsRUFBRSxDQUFDO0lBRS9DLHlFQUF5RTtJQUV6RTs7O09BR0c7SUFDSCxRQUFRLENBQUksSUFBbUIsRUFBRSxL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

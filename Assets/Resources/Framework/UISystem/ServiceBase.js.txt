@@ -1,0 +1,61 @@
+"use strict";
+/**
+ * ServiceBase — MVC 业务逻辑层基类
+ *
+ * 职责：
+ *   - 处理界面相关的业务逻辑（网络请求、游戏状态查询、数据转换等）
+ *   - 作为 View 与 Model 的中间协调者：
+ *       View 触发事件 → Service 处理 → Service 更新 Model → Model 通知 View 刷新
+ *   - 管理 Service 内部的事件订阅与资源
+ *
+ * 依赖方向：
+ *   Service 可持有 View 和 Model 的接口引用；
+ *   View 和 Model 不直接引用 Service（通过事件通信）。
+ *
+ * 生命周期（在 View.onCreate 之后、View.onOpen 之前调用）：
+ *   _setup(ctx, view, model) → _onInit() [onInit]   订阅事件、拉取初始数据
+ *   _onDestroy()             [onDestroy] 取消订阅、清理资源
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ServiceBase = void 0;
+class ServiceBase {
+    /** 当前 UI 运行时上下文 */
+    _ctx;
+    /** View 接口引用（通过接口而非具体类型访问，保持低耦合） */
+    _view;
+    /** Model 接口引用（可能为 null，若该 UI 未配置 Model） */
+    _model = null;
+    // ── 内部生命周期（由 UISystem 调用） ──────────────────────────────────────
+    _setup(ctx, view, model) {
+        this._ctx = ctx;
+        this._view = view;
+        this._model = model;
+    }
+    _onInit() {
+        this.onInit();
+    }
+    async _onPreload(mode) {
+        return this.onPreload(mode);
+    }
+    _onDestroy() {
+        this.onDestroy();
+    }
+    /**
+     * 可选预加载回调。重写此方法以实现打开前的数据预取（如网络请求）。
+     *
+     * 调用时机：onInit() 之后，View.onOpen() 之前。
+     * Fresh 和 FromCache 两种打开模式均会触发。
+     *
+     * 行为规则：
+     *   - 返回 true  → 预加载成功，继续打开界面（默认行为）
+     *   - 返回 false → 业务层主动中止，界面不打开，UISystem 触发 onFailed(PreloadAborted)
+     *   - throw      → 视为异常失败，UISystem 触发 onFailed(PreloadFailed, error)
+     *
+     * @param mode 打开模式，用于区分首次打开与从缓存恢复
+     */
+    async onPreload(_mode) {
+        return true;
+    }
+}
+exports.ServiceBase = ServiceBase;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU2VydmljZUJhc2UuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9VSVN5c3RlbS9TZXJ2aWNlQmFzZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7R0FnQkc7OztBQUlILE1BQXNCLFdBQVc7SUFFN0IsbUJBQW1CO0lBQ1QsSUFBSSxDQUFpQjtJQUMvQixvQ0FBb0M7SUFDMUIsS0FBSyxDQUFlO0lBQzlCLDJDQUEyQztJQUNqQyxNQUFNLEdBQXVCLElBQUksQ0FBQztJQUU1QyxrRUFBa0U7SUFFbEUsTUFBTSxDQUFDLEdBQWUsRUFBRSxJQUFlLEVBQUUsS0FBd0I7UUFDN0QsSUFBSSxDQUFDLElBQUksR0FBSyxHQUFHLENBQUM7UUFDbEIsSUFBSSxDQUFDLEtBQUssR0FBSSxJQUFJLENBQUM7UUFDbkIsSUFBSSxDQUFDLE1BQU0sR0FBRyxLQUFLLENBQUM7SUFDeEIsQ0FBQztJQUVELE9BQU87UUFDSCxJQUFJLENBQUMsTUFBTSxFQUFFLENBQUM7SUFDbEIsQ0FBQztJQUVELEtBQUssQ0FBQyxVQUFVLENBQUMsSUFBZ0I7UUFDN0IsT0FBTyxJQUFJLENBQUMsU0FBUyxDQUFDLElBQUksQ0FBQyxDQUFDO0lBQ2hDLENBQUM7SUFFRCxVQUFVO1FBQ04sSUFBSSxDQUFDLFNBQVMsRUFBRSxDQUFDO0lBQ3JCLENBQUM7SUFXRDs7Ozs7Ozs7Ozs7O09BWUc7SUFDTyxLQUFLLENBQUMsU0FBUyxDQUFDLEtBQWlCO1FBQ3ZDLE9BQU8sSUFBSSxDQUFDO0lBQ2hCLENBQUM7Q0FPSjtBQTVERCxrQ0E0REMifQ==

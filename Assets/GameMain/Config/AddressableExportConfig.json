@@ -1,0 +1,8 @@
+{
+    "rootPath": "Assets/GameMain",
+    "entries": [
+        {
+            "path": "Assets/GameMain/GameRes"
+        }
+    ]
+}

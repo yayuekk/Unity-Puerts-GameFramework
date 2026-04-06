@@ -1,0 +1,111 @@
+"use strict";
+/**
+ * UIStage — 单层 UI 层级管理器
+ *
+ * 职责：
+ *   - 追踪当前层级内所有可见 UI（按显示顺序排列的栈）
+ *   - 每当栈发生变化时，重新为所有 UI 分配 Canvas sortingOrder（Panel Distance）
+ *
+ * Panel Distance 策略：
+ *   - 每个 UI 的 sortingOrder = (stackIndex + 1) × STEP
+ *   - STEP = 10，最多 MAX_PANELS 个并发面板，则最大值 = MAX_PANELS × STEP = 500
+ *   - 值域 [10, 500]，远低于 Unity sortingOrder 上限 32767，完全安全
+ *   - 每次栈变化都整体重排，避免历史碎片导致数值漂移或溢出
+ *
+ * 注意：UIStage 不持有 GameObject 引用，实际的 SetUIPanelDistance 通过 C# UIRoot 静态方法执行。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UIStage = void 0;
+/** 相邻面板之间的 sortingOrder 间距 */
+const PANEL_DISTANCE_STEP = 10;
+/**
+ * 单层最大并发面板数。
+ * 超出后新面板无法入栈，控制台输出警告。
+ * 最大 sortingOrder = MAX_PANELS_PER_LAYER × PANEL_DISTANCE_STEP = 500。
+ */
+const MAX_PANELS_PER_LAYER = 50;
+class UIStage {
+    _layer;
+    _activeStack = [];
+    constructor(layer) {
+        this._layer = layer;
+    }
+    // ── 只读属性 ──────────────────────────────────────────────────────────────
+    get layer() { return this._layer; }
+    get activeCount() { return this._activeStack.length; }
+    get isEmpty() { return this._activeStack.length === 0; }
+    get topUI() { return this._activeStack[this._activeStack.length - 1]; }
+    // ── 栈操作 ────────────────────────────────────────────────────────────────
+    /**
+     * 将一个 UI 推入栈顶（最前方）并重新分配所有 Panel Distance。
+     * 若 UI 已在栈中，则将其移到栈顶（bringToFront 语义）。
+     * @returns true = 入栈成功；false = 已达最大并发数，未入栈
+     */
+    push(ctx) {
+        const existing = this._activeStack.indexOf(ctx);
+        if (existing >= 0) {
+            // 已在栈中，直接提到栈顶
+            if (existing !== this._activeStack.length - 1) {
+                this._activeStack.splice(existing, 1);
+                this._activeStack.push(ctx);
+                this._reassignDistances();
+            }
+            return true;
+        }
+        if (this._activeStack.length >= MAX_PANELS_PER_LAYER) {
+            console.warn(`[UIStage] Layer ${this._layer} reached max panel count (${MAX_PANELS_PER_LAYER}). ` +
+                `Cannot push "${ctx.name}".`);
+            return false;
+        }
+        this._activeStack.push(ctx);
+        this._reassignDistances();
+        return true;
+    }
+    /**
+     * 从栈中移除一个 UI 并重新分配剩余面板的 Panel Distance。
+     * 若 UI 不在栈中则静默忽略。
+     */
+    remove(ctx) {
+        const idx = this._activeStack.indexOf(ctx);
+        if (idx < 0)
+            return;
+        this._activeStack.splice(idx, 1);
+        this._reassignDistances();
+    }
+    /**
+     * 将已入栈的 UI 移到栈顶（视觉最前方）并重排距离。
+     * 若 UI 不在栈中则静默忽略。
+     */
+    bringToFront(ctx) {
+        const idx = this._activeStack.indexOf(ctx);
+        if (idx < 0 || idx === this._activeStack.length - 1)
+            return;
+        this._activeStack.splice(idx, 1);
+        this._activeStack.push(ctx);
+        this._reassignDistances();
+    }
+    // ── 私有辅助 ──────────────────────────────────────────────────────────────
+    /**
+     * 重新为栈中所有 UI 分配 Canvas sortingOrder（Panel Distance）。
+     *
+     * 分配规则：
+     *   - 栈底（index 0）→ sortingOrder = 1 × STEP = 10（最底层）
+     *   - 栈顶（index n-1）→ sortingOrder = n × STEP（最前方）
+     *   - 整体重排保证数值紧凑，永远不会漂移或溢出
+     */
+    _reassignDistances() {
+        const uiRoot = CS.GameFramework.UI.UIRoot.Instance;
+        if (!uiRoot) {
+            console.error("[UIStage] UIRoot.Instance is null. Cannot assign panel distances.");
+            return;
+        }
+        for (let i = 0; i < this._activeStack.length; i++) {
+            const go = this._activeStack[i].goHandle.asset;
+            if (go == null)
+                continue;
+            CS.GameFramework.UI.UIRoot.SetUIPanelDistance(go, (i + 1) * PANEL_DISTANCE_STEP);
+        }
+    }
+}
+exports.UIStage = UIStage;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVUlTdGFnZS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1VJU3lzdGVtL1VJU3RhZ2UudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7OztHQWNHOzs7QUFNSCw4QkFBOEI7QUFDOUIsTUFBTSxtQkFBbUIsR0FBRyxFQUFFLENBQUM7QUFFL0I7Ozs7R0FJRztBQUNILE1BQU0sb0JBQW9CLEdBQUcsRUFBRSxDQUFDO0FBRWhDLE1BQWEsT0FBTztJQUVDLE1BQU0sQ0FBZTtJQUNyQixZQUFZLEdBQWlCLEVBQUUsQ0FBQztJQUVqRCxZQUFZLEtBQWE7UUFDckIsSUFBSSxDQUFDLE1BQU0sR0FBRyxLQUFLLENBQUM7SUFDeEIsQ0FBQztJQUVELHlFQUF5RTtJQUV6RSxJQUFJLEtBQUssS0FBa0MsT0FBTyxJQUFJLENBQUMsTUFBTSxDQUFDLENBQXFDLENBQUM7SUFDcEcsSUFBSSxXQUFXLEtBQTRCLE9BQU8sSUFBSSxDQUFDLFlBQVksQ0FBQyxNQUFNLENBQUMsQ0FBd0IsQ0FBQztJQUNwRyxJQUFJLE9BQU8sS0FBZ0MsT0FBTyxJQUFJLENBQUMsWUFBWSxDQUFDLE1BQU0sS0FBSyxDQUFDLENBQUMsQ0FBa0IsQ0FBQztJQUNwRyxJQUFJLEtBQUssS0FBb0MsT0FBTyxJQUFJLENBQUMsWUFBWSxDQUFDLElBQUksQ0FBQyxZQUFZLENBQUMsTUFBTSxHQUFHLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQztJQUV0RywwRUFBMEU7SUFFMUU7Ozs7T0FJRztJQUNILElBQUksQ0FBQyxHQUFlO1FBQ2hCLE1BQU0sUUFBUSxHQUFHLElBQUksQ0FBQyxZQUFZLENBQUMsT0FBTyxDQUFDLEdBQUcsQ0FBQyxDQUFDO1FBQ2hELElBQUksUUFBUSxJQUFJLENBQUMsRUFBRSxDQUFDO1lBQ2hCLGNBQWM7WUFDZCxJQUFJLFFBQVEsS0FBSyxJQUFJLENBQUMsWUFBWSxDQUFD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

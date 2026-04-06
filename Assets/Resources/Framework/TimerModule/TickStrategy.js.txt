@@ -1,0 +1,45 @@
+"use strict";
+/**
+ * TickStrategy — 计时驱动策略（Strategy Pattern）
+ *
+ * 职责：封装"如何推进计时器进度 & 触发后如何重置"，与 TimerSystem 主逻辑解耦。
+ * 扩展：新增计时类型只需实现 ITickStrategy 并在 getStrategy 中注册，不修改主系统。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getStrategy = getStrategy;
+const TimerTypes_1 = require("./TimerTypes");
+// ─── 策略实现 ──────────────────────────────────────────────────────────────────
+/** 帧策略：每帧 elapsed + 1，与实际时间无关 */
+class FrameTickStrategy {
+    tick(entry, _dt) {
+        entry.elapsed++;
+        return entry.elapsed >= entry.interval;
+    }
+    afterFire(entry) {
+        entry.elapsed -= entry.interval;
+    }
+}
+/**
+ * 时间策略：每帧 elapsed += deltaTime（单位：秒）
+ * Second 和 Minute 均使用此策略（Minute 在创建时已将 interval 转为秒）
+ */
+class TimeTickStrategy {
+    tick(entry, dt) {
+        entry.elapsed += dt;
+        return entry.elapsed >= entry.interval;
+    }
+    afterFire(entry) {
+        entry.elapsed -= entry.interval;
+    }
+}
+// ─── 策略工厂 ──────────────────────────────────────────────────────────────────
+const _frame = new FrameTickStrategy();
+const _time = new TimeTickStrategy();
+/**
+ * 根据计时器类型返回对应策略单例。
+ * Minute 类型在创建时已将 interval 转为秒，运行时与 Second 共用同一策略，无额外分支。
+ */
+function getStrategy(type) {
+    return type === TimerTypes_1.TimerType.Frame ? _frame : _time;
+}
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVGlja1N0cmF0ZWd5LmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vVHNQcm9qZWN0X1REL3NyYy9GcmFtZXdvcmsvVGltZXJNb2R1bGUvVGlja1N0cmF0ZWd5LnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7R0FLRzs7QUEyREgsa0NBRUM7QUExREQsNkNBQXlDO0FBa0J6Qyw4RUFBOEU7QUFFOUUsaUNBQWlDO0FBQ2pDLE1BQU0saUJBQWlCO0lBQ25CLElBQUksQ0FBQyxLQUFpQixFQUFFLEdBQVc7UUFDL0IsS0FBSyxDQUFDLE9BQU8sRUFBRSxDQUFDO1FBQ2hCLE9BQU8sS0FBSyxDQUFDLE9BQU8sSUFBSSxLQUFLLENBQUMsUUFBUSxDQUFDO0lBQzNDLENBQUM7SUFFRCxTQUFTLENBQUMsS0FBaUI7UUFDdkIsS0FBSyxDQUFDLE9BQU8sSUFBSSxLQUFLLENBQUMsUUFBUSxDQUFDO0lBQ3BDLENBQUM7Q0FDSjtBQUVEOzs7R0FHRztBQUNILE1BQU0sZ0JBQWdCO0lBQ2xCLElBQUksQ0FBQyxLQUFpQixFQUFFLEVBQVU7UUFDOUIsS0FBSyxDQUFDLE9BQU8sSUFBSSxFQUFFLENBQUM7UUFDcEIsT0FBTyxLQUFLLENBQUMsT0FBTyxJQUFJLEtBQUssQ0FBQyxRQUFRLENBQUM7SUFDM0MsQ0FBQztJQUVELFNBQVMsQ0FBQyxLQUFpQjtRQUN2QixLQUFLLENBQUMsT0FBTyxJQUFJLEtBQUssQ0FBQyxRQUFRLENBQUM7SUFDcEMsQ0FBQztDQUNKO0FBRUQsOEVBQThFO0FBRTlFLE1BQU0sTUFBTSxHQUFrQixJQUFJLGlCQUFpQixFQUFFLENBQUM7QUFDdEQsTUFBTSxLQUFLLEdBQW1CLElBQUksZ0JBQWdCLEVBQUUsQ0FBQztBQUVyRDs7O0dBR0c7QUFDSCxTQUFnQixXQUFXLENBQUMsSUFBZTtJQUN2QyxPQUFPLElBQUksS0FBSyxzQkFBUyxDQUFDLEtBQUssQ0FBQyxDQUFDLENBQUMsTUFBTSxDQUFDLENBQUMsQ0FBQyxLQUFLLENBQUM7QUFDckQsQ0FBQyJ9

@@ -1,0 +1,11 @@
+"use strict";
+/**
+ * EventSystem 公共 API 出口
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EventBus = exports.EventSystem = void 0;
+var EventSystem_1 = require("./EventSystem");
+Object.defineProperty(exports, "EventSystem", { enumerable: true, get: function () { return EventSystem_1.EventSystem; } });
+var EventBus_1 = require("./EventBus");
+Object.defineProperty(exports, "EventBus", { enumerable: true, get: function () { return EventBus_1.EventBus; } });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9FdmVudE1vZHVsZS9pbmRleC50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7O0dBRUc7OztBQUVILDZDQUF1RjtBQUE5RSwwR0FBQSxXQUFXLE9BQUE7QUFDcEIsdUNBQW9GO0FBQTNFLG9HQUFBLFFBQVEsT0FBQSJ9

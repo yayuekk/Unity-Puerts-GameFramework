@@ -1,0 +1,37 @@
+"use strict";
+/**
+ * SaveTypes — 存档系统公共类型定义
+ *
+ * 设计原则：
+ *   - 仅包含对外暴露的接口与常量，与内部实现完全解耦
+ *   - 依赖接口编程，便于 Mock 与单元测试
+ *
+ * 存档文件结构：
+ *   {Application.persistentDataPath}/Saves/
+ *     {ModuleName}/
+ *       {FileName}.json   ← Dev 模式：明文 JSON，便于调试
+ *       {FileName}.sav    ← Release 模式：UTF-8 二进制，不易直接阅读
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SAVE_FILE_EXT = exports.SAVE_MODE_EXT = exports.SaveMode = void 0;
+// ─── 存档模式 ──────────────────────────────────────────────────────────────────
+/**
+ * 存档模式。
+ *
+ * - Dev     : 开发阶段，生成 .json 明文文件，可直接用文本编辑器查看与修改
+ * - Release : 发行阶段，生成 .sav 二进制文件（UTF-8 字节），不易直接阅读
+ *
+ * 切换模式时，若磁盘上已存在不同格式的存档，系统会自动清除旧存档。
+ */
+exports.SaveMode = {
+    Dev: "dev",
+    Release: "release",
+};
+/** 各存档模式对应的文件扩展名 */
+exports.SAVE_MODE_EXT = {
+    dev: ".json",
+    release: ".sav",
+};
+/** Release 模式下的默认存档文件扩展名（向后兼容保留） */
+exports.SAVE_FILE_EXT = exports.SAVE_MODE_EXT[exports.SaveMode.Release];
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU2F2ZVR5cGVzLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vVHNQcm9qZWN0X1REL3NyYy9GcmFtZXdvcmsvU2F2ZU1vZHVsZS9TYXZlVHlwZXMudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7R0FZRzs7O0FBRUgsOEVBQThFO0FBRTlFOzs7Ozs7O0dBT0c7QUFDVSxRQUFBLFFBQVEsR0FBRztJQUNwQixHQUFHLEVBQU0sS0FBSztJQUNkLE9BQU8sRUFBRSxTQUFTO0NBQ1osQ0FBQztBQUdYLG9CQUFvQjtBQUNQLFFBQUEsYUFBYSxHQUF1QztJQUM3RCxHQUFHLEVBQU0sT0FBTztJQUNoQixPQUFPLEVBQUUsTUFBTTtDQUNsQixDQUFDO0FBVUYsb0NBQW9DO0FBQ3ZCLFFBQUEsYUFBYSxHQUFHLHFCQUFhLENBQUMsZ0JBQVEsQ0FBQyxPQUFPLENBQUMsQ0FBQyJ9

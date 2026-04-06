@@ -1,0 +1,21 @@
+"use strict";
+/**
+ * EventTypes — 事件系统公共类型定义
+ *
+ * 设计原则：
+ *   - 仅包含对外暴露的接口与类型，与内部实现完全解耦
+ *   - 依赖接口编程，便于 Mock 与替换实现
+ *
+ * 触发模式：
+ *   - emit / emitDeferred             → 多播：按优先级顺序通知所有监听器
+ *   - emitUnicast / emitDeferredUnicast → 单播：只通知优先级最高的一个监听器
+ *
+ * 优先级：数值越大越先触发；相同优先级按注册先后顺序触发（FIFO，稳定排序）
+ *
+ * 防御机制：
+ *   - 触发前检测宿主上下文是否仍然有效（isAlive / isDestroyed 鸭式类型检测）
+ *   - 回调异常以 console.error 记录，不阻断后续监听器
+ *   - 事件无监听器时静默跳过，不抛出异常
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiRXZlbnRUeXBlcy5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL0V2ZW50TW9kdWxlL0V2ZW50VHlwZXMudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7Ozs7OztHQWlCRyJ9

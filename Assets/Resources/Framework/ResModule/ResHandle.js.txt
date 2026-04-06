@@ -1,0 +1,46 @@
+"use strict";
+/**
+ * ResHandle — 资源句柄（Handle Pattern）
+ *
+ * 职责：持有单次加载或实例化操作的结果，并在 release() 时通过
+ * IResController 接口将卸载逻辑委托给系统执行。
+ *
+ * 依赖倒置：ResHandle 仅依赖 IResController 接口而非 ResSystem 具体类，
+ * 消除循环依赖风险，且便于单元测试时注入 Mock 实现。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ResHandle = void 0;
+// ─── 句柄实现 ─────────────────────────────────────────────────────────────────
+class ResHandle {
+    _controller;
+    _kind;
+    key;
+    loadType;
+    _released = false;
+    _asset;
+    constructor(_controller, _kind, key, loadType, asset) {
+        this._controller = _controller;
+        this._kind = _kind;
+        this.key = key;
+        this.loadType = loadType;
+        this._asset = asset;
+    }
+    get asset() { return this._asset; }
+    get isLoaded() { return this._asset !== null && !this._released; }
+    get isReleased() { return this._released; }
+    release() {
+        if (this._released)
+            return;
+        this._released = true;
+        const asset = this._asset;
+        this._asset = null;
+        if (this._kind === "instance") {
+            this._controller.onInstanceHandleRelease(asset);
+        }
+        else {
+            this._controller.onAssetHandleRelease(this.key, this.loadType);
+        }
+    }
+}
+exports.ResHandle = ResHandle;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiUmVzSGFuZGxlLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vVHNQcm9qZWN0X1REL3NyYy9GcmFtZXdvcmsvUmVzTW9kdWxlL1Jlc0hhbmRsZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7O0dBUUc7OztBQWdDSCw2RUFBNkU7QUFFN0UsTUFBYSxTQUFTO0lBTUc7SUFDQTtJQUNEO0lBQ0E7SUFQWixTQUFTLEdBQUcsS0FBSyxDQUFDO0lBQ2xCLE1BQU0sQ0FBVztJQUV6QixZQUNxQixXQUEyQixFQUMzQixLQUFvQixFQUNyQixHQUFXLEVBQ1gsUUFBcUIsRUFDckMsS0FBUTtRQUpTLGdCQUFXLEdBQVgsV0FBVyxDQUFnQjtRQUMzQixVQUFLLEdBQUwsS0FBSyxDQUFlO1FBQ3JCLFFBQUcsR0FBSCxHQUFHLENBQVE7UUFDWCxhQUFRLEdBQVIsUUFBUSxDQUFhO1FBR3JDLElBQUksQ0FBQyxNQUFNLEdBQUcsS0FBSyxDQUFDO0lBQ3hCLENBQUM7SUFFRCxJQUFJLEtBQUssS0FBa0IsT0FBTyxJQUFJLENBQUMsTUFBTSxDQUFDLENBQUMsQ0FBQztJQUNoRCxJQUFJLFFBQVEsS0FBZSxPQUFPLElBQUksQ0FBQyxNQUFNLEtBQUssSUFBSSxJQUFJLENBQUMsSUFBSSxDQUFDLFNBQVMsQ0FBQyxDQUFDLENBQUM7SUFDNUUsSUFBSSxVQUFVLEtBQWMsT0FBTyxJQUFJLENBQUMsU0FBUyxDQUFDLENBQUMsQ0FBQztJQUVwRCxPQUFPO1FBQ0gsSUFBSSxJQUFJLENBQUMsU0FBUztZQUFFLE9BQU87UUFDM0IsSUFBSSxDQUFDLFNBQVMsR0FBRyxJQUFJLENBQUM7UUFFdEIsTUFBTSxLQUFLLEdBQUcsSUFBSSxDQUFDLE1BQU0sQ0FBQztRQUMxQixJQUFJLENBQUMsTUFBTSxHQUFHLElBQUksQ0FBQztRQUVuQixJQUFJLElBQUksQ0FBQyxLQUFLLEtBQUssVUFBVSxFQUFFLENBQUM7WUFDNUIsSUFBSSxDQUFDLFdBQVcsQ0FBQyx1QkFBdUIsQ0FBQyxLQUFLLENBQUMsQ0FBQztRQUNwRCxDQUFDO2FBQU0sQ0FBQztZQUNKLElBQUksQ0FBQyxXQUFXLENBQUMsb0JBQW9CLENBQUMsSUFBSSxDQUFDLEdBQUcsRUFBRSxJQUFJLENBQUMsUUFBUSxDQUFDLENBQUM7UUFDbkUsQ0FBQztJQUNMLENBQUM7Q0FDSjtBQWhDRCw4QkFnQ0MifQ==

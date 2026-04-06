@@ -1,0 +1,50 @@
+"use strict";
+/**
+ * LogChannelHandle — 日志通道句柄
+ *
+ * 职责：
+ *   - 持有通道元数据（id / name）
+ *   - 通过 ILogDispatcher 将打印请求和启用/禁用指令回调给 LogSystem
+ *
+ * 设计：
+ *   句柄本身无状态，LogSystem 是通道启用状态的唯一来源，
+ *   isEnabled 每次实时查询调度器，确保与系统状态严格同步。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.LogChannelHandle = void 0;
+// ─── 具体实现 ──────────────────────────────────────────────────────────────────
+class LogChannelHandle {
+    _dispatcher;
+    _id;
+    _name;
+    constructor(dispatcher, id, name) {
+        this._dispatcher = dispatcher;
+        this._id = id;
+        this._name = name;
+    }
+    get id() { return this._id; }
+    get name() { return this._name; }
+    /** 实时从 LogSystem 查询，保证与外部调用 enableChannel/disableChannel 同步 */
+    get isEnabled() {
+        return this._dispatcher.isChannelEnabled(this._id);
+    }
+    enable() { this._dispatcher.setChannelEnabled(this._id, true); }
+    disable() { this._dispatcher.setChannelEnabled(this._id, false); }
+    toggle() {
+        this._dispatcher.setChannelEnabled(this._id, !this.isEnabled);
+    }
+    debug(message, ...args) {
+        this._dispatcher.dispatchLog(this._id, "debug", message, args);
+    }
+    info(message, ...args) {
+        this._dispatcher.dispatchLog(this._id, "info", message, args);
+    }
+    warn(message, ...args) {
+        this._dispatcher.dispatchLog(this._id, "warn", message, args);
+    }
+    error(message, ...args) {
+        this._dispatcher.dispatchLog(this._id, "error", message, args);
+    }
+}
+exports.LogChannelHandle = LogChannelHandle;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiTG9nQ2hhbm5lbEhhbmRsZS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL0xvZ01vZHVsZS9Mb2dDaGFubmVsSGFuZGxlLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7OztHQVVHOzs7QUFtQkgsOEVBQThFO0FBRTlFLE1BQWEsZ0JBQWdCO0lBRVIsV0FBVyxDQUFpQjtJQUM1QixHQUFHLENBQVM7SUFDWixLQUFLLENBQVM7SUFFL0IsWUFBWSxVQUEwQixFQUFFLEVBQVUsRUFBRSxJQUFZO1FBQzVELElBQUksQ0FBQyxXQUFXLEdBQUcsVUFBVSxDQUFDO1FBQzlCLElBQUksQ0FBQyxHQUFHLEdBQUcsRUFBRSxDQUFDO1FBQ2QsSUFBSSxDQUFDLEtBQUssR0FBRyxJQUFJLENBQUM7SUFDdEIsQ0FBQztJQUVELElBQUksRUFBRSxLQUFlLE9BQU8sSUFBSSxDQUFDLEdBQUcsQ0FBQyxDQUFHLENBQUM7SUFDekMsSUFBSSxJQUFJLEtBQWEsT0FBTyxJQUFJLENBQUMsS0FBSyxDQUFDLENBQUMsQ0FBQztJQUV6QywrREFBK0Q7SUFDL0QsSUFBSSxTQUFTO1FBQ1QsT0FBTyxJQUFJLENBQUMsV0FBVyxDQUFDLGdCQUFnQixDQUFDLElBQUksQ0FBQyxHQUFHLENBQUMsQ0FBQztJQUN2RCxDQUFDO0lBRUQsTUFBTSxLQUFZLElBQUksQ0FBQyxXQUFXLENBQUMsaUJBQWlCLENBQUMsSUFBSSxDQUFDLEdBQUcsRUFBRSxJQUFJLENBQUMsQ0FBQyxDQUFFLENBQUM7SUFDeEUsT0FBTyxLQUFXLElBQUksQ0FBQyxXQUFXLENBQUMsaUJBQWlCLENBQUMsSUFBSSxDQUFDLEdBQUcsRUFBRSxLQUFLLENBQUMsQ0FBQyxDQUFDLENBQUM7SUFFeEUsTUFBTTtRQUNGLElBQUksQ0FBQyxXQUFXLENBQUMsaUJBQWlCLENBQUMsSUFBSSxDQUFDLEdBQUcsRUFBRSxDQUFDLElBQUksQ0FBQyxTQUFTLENBQUMsQ0FBQztJQUNsRSxDQUFDO0lBRUQsS0FBSyxDQUFDLE9BQWUsRUFBRSxHQUFHLElBQWU7UUFDckMsSUFBSSxDQUFDLFdBQVcsQ0FBQyxXQUFXLENBQUMsSUFBSSxDQUFDLEdBQUcsRUFBRSxPQUFPLEVBQUUsT0FBTyxFQUFFLElBQUksQ0FBQyxDQUFDO0lBQ25FLENBQUM7SUFFRCxJQUFJLENBQUMsT0FBZSxFQUFFLEdBQUcsSUFBZTtRQUNwQyxJQUFJLENBQUMsV0FBVyxDQUFDLFdBQVcsQ0FBQyxJQUFJLENBQUMsR0FBRyxFQUFFLE1BQU0sRUFBRSxPQUFPLEVBQUUsSUFBSSxDQUFDLENBQUM7SUFDbEUsQ0FBQztJQUVELElBQUksQ0FBQyxPQUFlLEVBQUUsR0FBRyxJQUFlO1FBQ3BDLElBQUksQ0FBQyxXQUFXLENBQUMsV0FBVyxDQUFDLElBQUksQ0FBQyxHQUFHLEVBQUUsTUFBTSxFQUFFLE9BQU8sRUFBRSxJQUFJLENBQUMsQ0FBQztJQUNsRSxDQUFDO0lBRUQsS0FBSyxDQUFDLE9BQWUsRUFBRSxHQUFHLElBQWU7UUFDckMsSUFBSSxDQUFDLFdBQVcsQ0FBQyxXQUFXLENBQUMsSUFBSSxDQUFDLEdBQUcsRUFBRSxPQUFPLEVBQUUsT0FBTyxFQUFFLElBQUksQ0FBQyxDQUFDO0lBQ25FLENBQUM7Q0FDSjtBQTFDRCw0Q0EwQ0MifQ==

@@ -1,0 +1,10 @@
+"use strict";
+/**
+ * ComputingTypes — CPU / GPU 压力检测模块公共类型定义
+ *
+ * 设计原则：
+ *   - 仅包含对外暴露的接口，与内部实现完全解耦
+ *   - 负载比例（cpuLoad / gpuLoad）以目标帧耗时为基准，> 1 表示超预算（掉帧）
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiQ29tcHV0aW5nVHlwZXMuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9DUFVBbmRHUFVDb21wdXRpbmcvQ29tcHV0aW5nVHlwZXMudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7R0FNRyJ9

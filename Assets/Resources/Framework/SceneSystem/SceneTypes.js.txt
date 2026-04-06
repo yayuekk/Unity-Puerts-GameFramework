@@ -1,0 +1,43 @@
+"use strict";
+/**
+ * SceneSystem 类型定义
+ *
+ * 约定：
+ *   - 所有场景加载/卸载必须通过 SceneSystem 接口进行，禁止直接调用
+ *     SceneManager.LoadScene / Addressables.LoadSceneAsync
+ *   - Single 模式加载时，系统会自动卸载所有 Additive 场景
+ *   - 每次 loadScene 调用立即返回 ISceneProgressHandle，加载在后台进行
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SceneLoadFailReason = exports.SceneState = exports.SceneLoadMode = void 0;
+// ─── 加载模式 ─────────────────────────────────────────────────────────────────
+/**
+ * 场景加载模式，数值与 Unity LoadSceneMode 枚举保持一致，可直接传递给 C# 桥接层。
+ *   - Single   = 0：卸载所有已加载场景后加载新场景（默认）
+ *   - Additive = 1：叠加加载，不卸载现有场景
+ */
+exports.SceneLoadMode = {
+    Single: 0,
+    Additive: 1,
+};
+// ─── 场景状态 ─────────────────────────────────────────────────────────────────
+exports.SceneState = {
+    /** 正在通过 Addressable 异步加载 */
+    Loading: "loading",
+    /** 已激活，当前场景栈中存在 */
+    Active: "active",
+    /** 正在卸载 */
+    Unloading: "unloading",
+};
+// ─── 加载失败原因 ──────────────────────────────────────────────────────────────
+exports.SceneLoadFailReason = {
+    /** Addressable 资产加载失败 */
+    LoadFailed: "loadFailed",
+    /** 相同 key 正在加载中，重复请求被拒绝 */
+    AlreadyLoading: "alreadyLoading",
+    /** 操作被外部调用 cancel() 取消 */
+    Cancelled: "cancelled",
+    /** 过渡动画执行时发生异常 */
+    TransitionError: "transitionError",
+};
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU2NlbmVUeXBlcy5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1NjZW5lU3lzdGVtL1NjZW5lVHlwZXMudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7OztHQVFHOzs7QUFFSCw2RUFBNkU7QUFFN0U7Ozs7R0FJRztBQUNVLFFBQUEsYUFBYSxHQUFHO0lBQ3pCLE1BQU0sRUFBSSxDQUFDO0lBQ1gsUUFBUSxFQUFFLENBQUM7Q0FDTCxDQUFDO0FBR1gsNkVBQTZFO0FBRWhFLFFBQUEsVUFBVSxHQUFHO0lBQ3RCLDRCQUE0QjtJQUM1QixPQUFPLEVBQUksU0FBUztJQUNwQixtQkFBbUI7SUFDbkIsTUFBTSxFQUFLLFFBQVE7SUFDbkIsV0FBVztJQUNYLFNBQVMsRUFBRSxXQUFXO0NBQ2hCLENBQUM7QUFHWCw0RUFBNEU7QUFFL0QsUUFBQSxtQkFBbUIsR0FBRztJQUMvQix5QkFBeUI7SUFDekIsVUFBVSxFQUFPLFlBQVk7SUFDN0IsMkJBQTJCO0lBQzNCLGNBQWMsRUFBRyxnQkFBZ0I7SUFDakMsMEJBQTBCO0lBQzFCLFNBQVMsRUFBUSxXQUFXO0lBQzVCLGtCQUFrQjtJQUNsQixlQUFlLEVBQUUsaUJBQWlCO0NBQzVCLENBQUMifQ==

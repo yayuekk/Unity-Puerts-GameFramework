@@ -1,0 +1,28 @@
+"use strict";
+/**
+ * TimerHandle — 计时器句柄（Handle Pattern）
+ *
+ * 职责：为调用方提供对单个计时器的控制入口，屏蔽内部 ID 管理细节。
+ *
+ * 依赖倒置：Handle 不直接依赖 TimerSystem 具体类，而是依赖 ITimerController 接口，
+ * 彻底消除句柄与主系统之间的循环依赖风险，也方便单元测试时注入 Mock。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TimerHandle = void 0;
+// ─── 句柄实现 ──────────────────────────────────────────────────────────────────
+class TimerHandle {
+    _controller;
+    id;
+    constructor(_controller, id) {
+        this._controller = _controller;
+        this.id = id;
+    }
+    get isActive() { return this._controller.isTimerActive(this.id); }
+    get isPaused() { return this._controller.isTimerPaused(this.id); }
+    cancel() { this._controller.removeTimer(this.id); }
+    pause() { this._controller.pauseTimer(this.id); }
+    resume() { this._controller.resumeTimer(this.id); }
+    reset() { this._controller.resetTimer(this.id); }
+}
+exports.TimerHandle = TimerHandle;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVGltZXJIYW5kbGUuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9UaW1lck1vZHVsZS9UaW1lckhhbmRsZS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7R0FPRzs7O0FBbUJILDhFQUE4RTtBQUU5RSxNQUFhLFdBQVc7SUFHQztJQUNEO0lBRnBCLFlBQ3FCLFdBQTZCLEVBQzlCLEVBQVU7UUFEVCxnQkFBVyxHQUFYLFdBQVcsQ0FBa0I7UUFDOUIsT0FBRSxHQUFGLEVBQUUsQ0FBUTtJQUMzQixDQUFDO0lBRUosSUFBSSxRQUFRLEtBQWMsT0FBTyxJQUFJLENBQUMsV0FBVyxDQUFDLGFBQWEsQ0FBQyxJQUFJLENBQUMsRUFBRSxDQUFDLENBQUMsQ0FBQyxDQUFDO0lBQzNFLElBQUksUUFBUSxLQUFjLE9BQU8sSUFBSSxDQUFDLFdBQVcsQ0FBQyxhQUFhLENBQUMsSUFBSSxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUMsQ0FBQztJQUUzRSxNQUFNLEtBQVcsSUFBSSxDQUFDLFdBQVcsQ0FBQyxXQUFXLENBQUMsSUFBSSxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUMsQ0FBQztJQUN6RCxLQUFLLEtBQVksSUFBSSxDQUFDLFdBQVcsQ0FBQyxVQUFVLENBQUMsSUFBSSxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUMsQ0FBQztJQUN4RCxNQUFNLEtBQVcsSUFBSSxDQUFDLFdBQVcsQ0FBQyxXQUFXLENBQUMsSUFBSSxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUMsQ0FBQztJQUN6RCxLQUFLLEtBQVksSUFBSSxDQUFDLFdBQVcsQ0FBQyxVQUFVLENBQUMsSUFBSSxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUMsQ0FBQztDQUMzRDtBQWRELGtDQWNDIn0=

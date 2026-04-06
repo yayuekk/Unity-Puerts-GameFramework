@@ -1,0 +1,83 @@
+"use strict";
+/**
+ * CpuSampler — CPU 帧耗时与内存采样器
+ *
+ * 职责：
+ *   - 维护一个固定大小的滑动窗口，计算平均 FPS
+ *   - 通过 UnityEngine.Profiling.Profiler 读取托管堆内存（分配量 / 预留量）
+ *   - 根据目标帧耗时（ms）估算当帧 CPU 负载比例（0–1，超预算时 > 1）
+ *
+ * 注意：
+ *   Profiler API 在 Release Build 且未开启 Development Mode 时可能不可用，
+ *   访问失败时内存字段静默降级为 0，不影响帧率与负载计算。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CpuSampler = void 0;
+const BYTES_TO_MB = 1 / (1024 * 1024);
+// ─── CpuSampler ───────────────────────────────────────────────────────────────
+class CpuSampler {
+    _window = [];
+    _maxWindow;
+    _windowSum = 0;
+    _lastFrameTimeMs = 0;
+    _lastFps = 0;
+    /**
+     * @param windowSize 滑动窗口大小（帧数），用于计算平均 FPS，默认 60。
+     */
+    constructor(windowSize = 60) {
+        this._maxWindow = Math.max(1, windowSize);
+    }
+    // ── 采样 ─────────────────────────────────────────────────────────────────
+    /**
+     * 每帧调用，传入 Unity Time.deltaTime（秒）。
+     * deltaTime ≤ 0 时跳过以避免除零。
+     */
+    update(deltaTime) {
+        if (deltaTime <= 0)
+            return;
+        const fps = 1 / deltaTime;
+        this._lastFrameTimeMs = deltaTime * 1000;
+        this._lastFps = fps;
+        this._window.push(fps);
+        this._windowSum += fps;
+        if (this._window.length > this._maxWindow) {
+            this._windowSum -= this._window.shift();
+        }
+    }
+    // ── 快照 ─────────────────────────────────────────────────────────────────
+    /**
+     * 返回当前帧的 CPU 压力快照。
+     * @param targetFrameTimeMs 目标帧耗时（ms），用于计算 cpuLoad = frameTimeMs / target。
+     */
+    getSnapshot(targetFrameTimeMs) {
+        const frameTimeMs = this._lastFrameTimeMs;
+        const fps = this._lastFps;
+        const avgFps = this._window.length > 0
+            ? this._windowSum / this._window.length
+            : 0;
+        let allocatedMemoryMB = 0;
+        let reservedMemoryMB = 0;
+        try {
+            allocatedMemoryMB =
+                CS.UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() * BYTES_TO_MB;
+            reservedMemoryMB =
+                CS.UnityEngine.Profiling.Profiler.GetTotalReservedMemoryLong() * BYTES_TO_MB;
+        }
+        catch {
+            // Release Build 下 Profiler 不可用时静默忽略，内存字段保持 0
+        }
+        const cpuLoad = targetFrameTimeMs > 0
+            ? Math.min(frameTimeMs / targetFrameTimeMs, 2)
+            : 0;
+        return { frameTimeMs, fps, avgFps, allocatedMemoryMB, reservedMemoryMB, cpuLoad };
+    }
+    // ── 重置 ─────────────────────────────────────────────────────────────────
+    reset() {
+        this._window.length = 0;
+        this._windowSum = 0;
+        this._lastFrameTimeMs = 0;
+        this._lastFps = 0;
+    }
+}
+exports.CpuSampler = CpuSampler;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiQ3B1Q29tcHV0aW5nLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vVHNQcm9qZWN0X1REL3NyYy9GcmFtZXdvcmsvQ1BVQW5kR1BVQ29tcHV0aW5nL0NwdUNvbXB1dGluZy50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7O0dBV0c7OztBQU1ILE1BQU0sV0FBVyxHQUFHLENBQUMsR0FBRyxDQUFDLElBQUksR0FBRyxJQUFJLENBQUMsQ0FBQztBQUV0QyxpRkFBaUY7QUFFakYsTUFBYSxVQUFVO0lBRUYsT0FBTyxHQUFnQixFQUFFLENBQUM7SUFDMUIsVUFBVSxDQUFTO0lBQzVCLFVBQVUsR0FBYSxDQUFDLENBQUM7SUFDekIsZ0JBQWdCLEdBQU8sQ0FBQyxDQUFDO0lBQ3pCLFFBQVEsR0FBZSxDQUFDLENBQUM7SUFFakM7O09BRUc7SUFDSCxZQUFZLFVBQVUsR0FBRyxFQUFFO1FBQ3ZCLElBQUksQ0FBQyxVQUFVLEdBQUcsSUFBSSxDQUFDLEdBQUcsQ0FBQyxDQUFDLEVBQUUsVUFBVSxDQUFDLENBQUM7SUFDOUMsQ0FBQztJQUVELDBFQUEwRTtJQUUxRTs7O09BR0c7SUFDSCxNQUFNLENBQUMsU0FBaUI7UUFDcEIsSUFBSSxTQUFTLElBQUksQ0FBQztZQUFFLE9BQU87UUFFM0IsTUFBTSxHQUFHLEdBQUcsQ0FBQyxHQUFHLFNBQVMsQ0FBQztRQUMxQixJQUFJLENBQUMsZ0JBQWdCLEdBQUcsU0FBUyxHQUFHLElBQUksQ0FBQztRQUN6QyxJQUFJLENBQUMsUUFBUSxHQUFXLEdBQUcsQ0FBQztRQUU1QixJQUFJLENBQUMsT0FBTyxDQUFDLElBQUksQ0FBQyxHQUFHLENBQUMsQ0FBQztRQUN2QixJQUFJLENBQUMsVUFBVSxJQUFJLEdBQUcsQ0FBQztRQUN2QixJQUFJLElBQUksQ0FBQyxPQUFPLENBQUMsTUFBTSxHQUFHLElBQUksQ0FBQyxVQUFVLEVBQUUsQ0FBQztZQUN4QyxJQUFJLENBQUMsVUFBVSxJQUFJLElBQUksQ0FBQyxPQUFPLENBQUMsS0FBSyxFQUFHLENBQUM7UUFDN0MsQ0FBQztJQUNMLENBQUM7SUFFRCwwRUFBMEU7SUFFMUU7OztPQUdHO0lBQ0gsV0FBVyxDQUFDLGlCQUF5QjtRQUNqQyxNQUFNLFdBQVcsR0FBRyxJQUFJLENBQUMsZ0JBQWdCLENBQUM7UUFDMUMsTUFBTSxHQUFHLEdBQVcsSUFBSSxDQUFDLFFBQVEsQ0FBQztRQUNsQyxNQUFNLE1BQU0sR0FBUSxJQUFJLENBQUMsT0FBTyxDQUFDLE1BQU0sR0FBRyxDQUFDO1lBQ3ZDLENBQUMsQ0FBQyxJQUFJLENBQUMsVUFBVSxHQUFHLElBQUksQ0FBQyxPQUFPLENBQUMsTUFBTTtZQUN2QyxDQUFDLENBQUMsQ0FBQyxDQUFDO1FBRVIsSUFBSSxpQkFBaUIsR0FBRyxDQUFDLENBQUM7UUFDMUIsSUFBSSxnQkFBZ0IsR0FBSSxDQUFDLENBQUM7UUFDMUIsSUFBSSxDQUFDO1lBQ0QsaUJBQWlCO2dCQUNiLEVBQUUsQ0FBQyxXQUFXLENBQUMsU0FBUyxDQUFDLFFBQVEsQ0FBQywyQkFBMkIsRUFBRSxHQUFHLFdBQVcsQ0FBQztZQUNsRixnQkFBZ0I7Z0JBQ1osRUFBRSxDQUFDLFdBQVcsQ0FBQyxTQUFTLENBQUMsUUFBUSxDQUFDLDBCQUEwQixFQUFFLEdBQUksV0FBVyxDQUFDO1FBQ3RGLENBQUM7UUFBQyxNQUFNLENBQUM7WUFDTCw2Q0FBNkM7UUFDakQsQ0FBQztRQUVELE1BQU0sT0FBTyxHQUFHLGlCQUFpQixHQUFHLENBQUM7WUFDakMsQ0FBQyxDQUFDLElBQUksQ0FBQyxHQUFHLENBQUMsV0FBVyxHQUFHLGlCQUFpQixFQUFFLENBQUMsQ0FBQztZQUM5QyxDQUFDLENBQUMsQ0FBQyxDQUFDO1FBRVIsT0FBTyxFQUFFLFdBQVcsRUFBRSxHQUFHLEVBQUUsTUFBTSxFQUFFLGlCQUFpQixFQUFFLGdCQUFnQixFQUFFLE9BQU8sRUFBRSxDQUFDO0lBQ3RGLENBQUM7SUFFRCwwRUFBMEU7SUFFMUUsS0FBSztRQUNELElBQUksQ0FBQyxPQUFPLENBQUMsTUFBTSxHQUFLLENBQUMsQ0FBQztRQUMxQixJQUFJLENBQUMsVUFBVSxHQUFTLENBQUMsQ0FBQztRQUMxQixJQUFJLENBQUMsZ0JBQWdCLEdBQUcsQ0FBQyxDQUFDO1FBQzFCLElBQUksQ0FBQyxRQUFRLEdBQVcsQ0FBQyxDQUFDO0lBQzlCLENBQUM7Q0FDSjtBQTFFRCxnQ0EwRUMifQ==

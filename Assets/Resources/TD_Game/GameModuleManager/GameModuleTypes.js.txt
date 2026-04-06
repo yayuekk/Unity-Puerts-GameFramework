@@ -1,0 +1,11 @@
+"use strict";
+/**
+ * GameModuleTypes — 游戏逻辑模块管理器类型定义
+ *
+ * 设计原则：
+ *   - 低耦合：模块仅依赖 IGameModuleManager 获取其他模块，不直接引用
+ *   - 高内聚：每个 IGameLogicModule 只负责一块游戏逻辑
+ *   - 高性能：Map 按名 O(1) 查找，独立 update 列表避免每帧类型判断
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiR2FtZU1vZHVsZVR5cGVzLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vVHNQcm9qZWN0X1REL3NyYy9URF9HYW1lL0dhbWVNb2R1bGVNYW5hZ2VyL0dhbWVNb2R1bGVUeXBlcy50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7R0FPRyJ9

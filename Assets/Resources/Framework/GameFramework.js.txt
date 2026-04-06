@@ -1,0 +1,227 @@
+"use strict";
+/**
+ * GameFramework — 框架核心单例
+ *
+ * 职责：
+ *   1. 提供全局唯一的访问入口（GameFramework.instance）
+ *   2. 管理所有子模块的注册、初始化、逐帧更新与销毁
+ *   3. 底层模块通过直接 getter 获取，扩展模块通过 getModule 获取
+ *
+ * 生命周期（由 Unity C# 侧驱动）：
+ *   create() → registerModule() × N → init() → update() × N → shutdown()
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GameFramework = exports.CoreModuleNames = exports.FrameworkEvents = void 0;
+// ─── 框架内置事件 ────────────────────────────────────────────────────────────
+exports.FrameworkEvents = {
+    /** 所有模块 onInit 全部完成后触发 */
+    INIT_COMPLETE: "fw:initComplete",
+    /** shutdown 开始前触发，此时模块尚未销毁，可做清理前的善后工作 */
+    BEFORE_SHUTDOWN: "fw:beforeShutdown",
+};
+// ─── 底层模块名称（与 bootstrap 注册顺序一致，仅底层模块在此定义）────────────
+exports.CoreModuleNames = {
+    EVENT: "EventSystem",
+    LOG: "LogSystem",
+    TIMER: "TimerSystem",
+    RES: "ResSystem",
+    POOL: "PoolSystem",
+    SAVE: "SaveSystem",
+    SCENE: "SceneSystem",
+    COMPUTING: "ComputingSystem",
+    UI: "UISystem",
+};
+// ─── GameFramework ────────────────────────────────────────────────────────────
+class GameFramework {
+    // ── 单例 ──────────────────────────────────────────────────────────────────
+    static _instance = null;
+    /**
+     * 获取框架单例。必须在 `create()` 之后调用，否则抛出异常。
+     */
+    static get instance() {
+        if (!GameFramework._instance) {
+            throw new Error("[GameFramework] Not created yet. Call GameFramework.create() first.");
+        }
+        return GameFramework._instance;
+    }
+    /**
+     * 创建框架单例并返回，供入口脚本调用一次。
+     * 若已存在则直接返回现有实例（幂等）。
+     */
+    static create() {
+        if (GameFramework._instance) {
+            console.warn("[GameFramework] Instance already exists, returning existing.");
+            return GameFramework._instance;
+        }
+        GameFramework._instance = new GameFramework();
+        console.log("[GameFramework] Instance created.");
+        return GameFramework._instance;
+    }
+    // ── 内部状态 ──────────────────────────────────────────────────────────────
+    _modules = new Map();
+    /** 只保存实现了 onUpdate 的模块，避免每帧空判断 */
+    _updateables = [];
+    _initialized = false;
+    constructor() { }
+    // ── 底层模块直接访问（由 bootstrap 优先注册，扩展模块请用 getModule）──────
+    /** 全局事件总线（底层模块，直接获取） */
+    get event() {
+        return this.getModule(exports.CoreModuleNames.EVENT);
+    }
+    /** 日志系统（底层模块，直接获取） */
+    get log() {
+        return this.getModule(exports.CoreModuleNames.LOG);
+    }
+    /** 计时器系统（底层模块，直接获取） */
+    get timer() {
+        return this.getModule(exports.CoreModuleNames.TIMER);
+    }
+    /** 资源系统（底层模块，直接获取） */
+    get res() {
+        return this.getModule(exports.CoreModuleNames.RES);
+    }
+    /** 对象池系统（底层模块，直接获取） */
+    get pool() {
+        return this.getModule(exports.CoreModuleNames.POOL);
+    }
+    /** 存档系统（底层模块，直接获取） */
+    get save() {
+        return this.getModule(exports.CoreModuleNames.SAVE);
+    }
+    /** 场景系统（底层模块，直接获取） */
+    get scene() {
+        return this.getModule(exports.CoreModuleNames.SCENE);
+    }
+    /** CPU/GPU 性能采样（底层模块，直接获取） */
+    get computing() {
+        return this.getModule(exports.CoreModuleNames.COMPUTING);
+    }
+    /** UI 系统（底层模块，直接获取） */
+    get ui() {
+        return this.getModule(exports.CoreModuleNames.UI);
+    }
+    /** 框架是否已完成初始化 */
+    get isInitialized() {
+        return this._initialized;
+    }
+    // ── 模块管理 ──────────────────────────────────────────────────────────────
+    /**
+     * 注册一个模块。必须在 `init()` 之前调用，支持链式调用。
+     */
+    registerModule(module) {
+        if (this._initialized) {
+            console.error(`[GameFramework] Cannot register "${module.moduleName}" after init().`);
+            return this;
+        }
+        if (this._modules.has(module.moduleName)) {
+            console.warn(`[GameFramework] Module "${module.moduleName}" already registered, skipping.`);
+            return this;
+        }
+        this._modules.set(module.moduleName, module);
+        if (typeof module.onUpdate === "function") {
+            this._updateables.push(module);
+        }
+        console.log(`[GameFramework]   + ${module.moduleName}`);
+        return this;
+    }
+    /**
+     * 按名称获取模块（强类型）。找不到时抛出异常，适合确定存在的场景。
+     */
+    getModule(name) {
+        const mod = this._modules.get(name);
+        if (!mod) {
+            throw new Error(`[GameFramework] Module "${name}" not found.`);
+        }
+        return mod;
+    }
+    /**
+     * 按名称安全获取模块，找不到返回 undefined，适合可选依赖场景。
+     */
+    tryGetModule(name) {
+        return this._modules.get(name);
+    }
+    // ── 生命周期 ──────────────────────────────────────────────────────────────
+    /**
+     * 初始化框架：按注册顺序依次调用各模块的 `onInit`。
+     * 由 Unity 入口脚本在 Start / Awake 阶段调用一次。
+     */
+    init() {
+        if (this._initialized) {
+            console.warn("[GameFramework] Already initialized.");
+            return;
+        }
+        const total = this._modules.size;
+        console.log(`[GameFramework] ── Initializing ${total} module(s) ──`);
+        let okCount = 0;
+        let failCount = 0;
+        const t0 = Date.now();
+        for (const mod of this._modules.values()) {
+            const mt0 = Date.now();
+            try {
+                mod.onInit(this);
+                const elapsed = Date.now() - mt0;
+                console.log(`[GameFramework]   [OK] ${mod.moduleName}${elapsed > 0 ? ` (${elapsed}ms)` : ""}`);
+                okCount++;
+            }
+            catch (err) {
+                console.error(`[GameFramework]   [FAIL] ${mod.moduleName}: ${err}`);
+                failCount++;
+            }
+        }
+        this._initialized = true;
+        this.event.emit(exports.FrameworkEvents.INIT_COMPLETE);
+        const elapsed = Date.now() - t0;
+        if (failCount === 0) {
+            console.log(`[GameFramework] ── Init complete: ${okCount}/${total} OK (${elapsed}ms) ──`);
+        }
+        else {
+            console.warn(`[GameFramework] ── Init complete: ${okCount}/${total} OK, ${failCount} FAILED (${elapsed}ms) ──`);
+        }
+    }
+    /**
+     * 每帧更新：依次调用所有实现了 `onUpdate` 的模块。
+     * 由 Unity 入口脚本在 Update 阶段调用。
+     * @param deltaTime — Unity Time.deltaTime，单位秒
+     */
+    update(deltaTime) {
+        for (const mod of this._updateables) {
+            mod.onUpdate(deltaTime);
+        }
+    }
+    /**
+     * 销毁框架：先广播 BEFORE_SHUTDOWN 事件，再逆序调用各模块的 `onShutdown`，
+     * 最后清空所有状态并释放单例。
+     * 由 Unity 入口脚本在 OnDestroy 阶段调用。
+     */
+    shutdown() {
+        if (!this._initialized)
+            return;
+        const total = this._modules.size;
+        console.log(`[GameFramework] ── Shutting down ${total} module(s) ──`);
+        this.event.emit(exports.FrameworkEvents.BEFORE_SHUTDOWN);
+        let failCount = 0;
+        const mods = Array.from(this._modules.values()).reverse();
+        for (const mod of mods) {
+            try {
+                mod.onShutdown();
+                console.log(`[GameFramework]   [OK] ${mod.moduleName}`);
+            }
+            catch (err) {
+                console.error(`[GameFramework]   [FAIL] ${mod.moduleName}: ${err}`);
+                failCount++;
+            }
+        }
+        this._modules.clear();
+        this._updateables.length = 0;
+        this._initialized = false;
+        GameFramework._instance = null;
+        if (failCount === 0) {
+            console.log("[GameFramework] ── Shutdown complete ──");
+        }
+        else {
+            console.warn(`[GameFramework] ── Shutdown complete (${failCount} error(s)) ──`);
+        }
+    }
+}
+exports.GameFramework = GameFramework;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiR2FtZUZyYW1ld29yay5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL0dhbWVGcmFtZXdvcmsudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7O0dBVUc7OztBQVlILDBFQUEwRTtBQUU3RCxRQUFBLGVBQWUsR0FBRztJQUMzQiwwQkFBMEI7SUFDMUIsYUFBYSxFQUFFLGlCQUFpQjtJQUNoQyx5Q0FBeUM7SUFDekMsZUFBZSxFQUFFLG1CQUFtQjtDQUM5QixDQUFDO0FBSVgsdURBQXVEO0FBRTFDLFFBQUEsZUFBZSxHQUFHO0lBQzNCLEtBQUssRUFBRSxhQUFhO0lBQ3BCLEdBQUcsRUFBRSxXQUFXO0lBQ2hCLEtBQUssRUFBRSxhQUFhO0lBQ3BCLEdBQUcsRUFBRSxXQUFXO0lBQ2hCLElBQUksRUFBRSxZQUFZO0lBQ2xCLElBQUksRUFBRSxZQUFZO0lBQ2xCLEtBQUssRUFBRSxhQUFhO0lBQ3BCLFNBQVMsRUFBRSxpQkFBaUI7SUFDNUIsRUFBRSxFQUFFLFVBQVU7Q0FDUixDQUFDO0FBa0JYLGlGQUFpRjtBQUVqRixNQUFhLGFBQWE7SUFFdEIsMkVBQTJFO0lBRW5FLE1BQU0sQ0FBQyxTQUFTLEdBQXlCLElBQUksQ0FBQztJQUV0RDs7T0FFRztJQUNILE1BQU0sS0FBSyxRQUFRO1FBQ2YsSUFBSSxDQUFDLGFBQWEsQ0FBQyxTQUFTLEVBQUUsQ0FBQztZQUMzQixNQUFNLElBQUksS0FBSyxDQUNYLHFFQUFxRSxDQUN4RSxDQUFDO1FBQ04sQ0FBQztRQUNELE9BQU8sYUFBYSxDQUFDLFNBQVMsQ0FBQztJQUNuQyxDQUFDO0lBRUQ7OztPQUdHO0lBQ0gsTUFBTSxDQUFDLE1BQU07UUFDVCxJQUFJLGFBQWEsQ0FBQyxTQUFTLEVBQUUsQ0FBQztZQUMxQixPQUFPLENBQUMsSUFBSSxDQUFDLDhEQUE4RCxDQUFDLENBQUM7WUFDN0UsT0FBTyxhQUFhLENBQUMsU0FBUyxD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

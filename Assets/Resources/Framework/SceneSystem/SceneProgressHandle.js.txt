@@ -1,0 +1,165 @@
+"use strict";
+/**
+ * SceneProgressHandle — 场景加载进度句柄内部实现
+ *
+ * 对外暴露 ISceneProgressHandle 接口，对内提供供 SceneSystem 驱动的
+ * _update / _complete / _fail / _markCancelled 方法。
+ *
+ * 设计原则：
+ *   - 回调注册与触发解耦：注册时若已完成/失败，立即同步触发。
+ *   - 进度回调幂等保护：相同进度值不重复触发，减少无效调用。
+ *   - 进度=1 单次推送保证：_complete() 仅在 _update() 尚未推送 1.0 时才补发，
+ *     避免 onUpdate 轮询与 _complete() 在同一帧末尾造成双重触发。
+ *   - 迭代快照安全：_update() 使用 captured-length 循环，防止回调内追加新订阅者
+ *     导致当帧意外执行新回调。
+ *   - 所有回调均包裹在 try/catch 中，防止用户代码异常污染加载流程。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SceneProgressHandle = void 0;
+// Bug Fix: 必须使用值导入（非 import type），才能在运行时引用 SceneLoadFailReason.Cancelled 常量。
+// 若仅 import type，编译后常量不存在，只能靠字符串字面量 + as 强转绕过类型系统。
+const SceneTypes_1 = require("./SceneTypes");
+// ─── SceneProgressHandle ──────────────────────────────────────────────────────
+class SceneProgressHandle {
+    // ── 公开只读属性 ──────────────────────────────────────────────────────────
+    key;
+    _progress = 0;
+    _isDone = false;
+    _isCancelled = false;
+    _error = null;
+    _failReason = null;
+    get progress() { return this._progress; }
+    get isDone() { return this._isDone; }
+    get isCancelled() { return this._isCancelled; }
+    get error() { return this._error; }
+    // ── 回调队列 ──────────────────────────────────────────────────────────────
+    _progressCbs = [];
+    _completeCbs = [];
+    _errorCbs = [];
+    // ─────────────────────────────────────────────────────────────────────────
+    constructor(key) {
+        this.key = key;
+    }
+    // ── ISceneProgressHandle 公开接口 ─────────────────────────────────────────
+    onProgress(cb) {
+        if (this._isDone) {
+            this._safeCall(() => cb(this._progress));
+        }
+        else {
+            this._progressCbs.push(cb);
+        }
+        return this;
+    }
+    onComplete(cb) {
+        if (this._isDone && this._error === null && !this._isCancelled) {
+            this._safeCall(cb);
+        }
+        else if (!this._isDone) {
+            this._completeCbs.push(cb);
+        }
+        return this;
+    }
+    onError(cb) {
+        if (this._isDone && (this._error !== null || this._isCancelled)) {
+            const reason = this._failReason;
+            const message = this._error ?? "cancelled";
+            this._safeCall(() => cb(reason, message));
+        }
+        else if (!this._isDone) {
+            this._errorCbs.push(cb);
+        }
+        return this;
+    }
+    cancel() {
+        if (!this._isDone) {
+            this._isCancelled = true;
+        }
+    }
+    // ── 框架内部驱动接口（以下方法仅供 SceneSystem 调用）────────────────────
+    /**
+     * 更新进度值并通知已注册的 onProgress 回调。
+     * 相同进度值不重复触发。
+     *
+     * 迭代安全：使用 captured-length 循环，防止回调内追加新订阅者被意外执行。
+     */
+    _update(progress) {
+        if (this._isDone)
+            return;
+        const clamped = Math.min(1, Math.max(0, progress));
+        if (clamped === this._progress)
+            return;
+        this._progress = clamped;
+        // 使用 captured-length 而非 for-of，防止回调内 onProgress() 追加的新项被当帧执行
+        const cbs = this._progressCbs;
+        for (let i = 0, len = cbs.length; i < len; i++) {
+            const cb = cbs[i];
+            this._safeCall(() => cb(clamped));
+        }
+    }
+    /**
+     * 标记加载成功完成，触发 onComplete 回调。
+     *
+     * 进度=1 推送规则：
+     *   - 若 onUpdate 已通过 _update(1.0) 将进度推至 1，跳过 progressCbs 通知，避免双重触发。
+     *   - 若尚未到达 1（加载瞬间完成 / 过渡延迟），补发一次 progress=1。
+     * 两种情况下 _progress 均保证在回调触发前已设置为 1。
+     */
+    _complete() {
+        if (this._isDone)
+            return;
+        this._isDone = true;
+        const needsProgressPush = this._progress < 1;
+        this._progress = 1;
+        if (needsProgressPush) {
+            const cbs = this._progressCbs;
+            for (let i = 0, len = cbs.length; i < len; i++) {
+                const cb = cbs[i];
+                this._safeCall(() => cb(1));
+            }
+        }
+        for (const cb of this._completeCbs) {
+            this._safeCall(cb);
+        }
+        this._clearCallbacks();
+    }
+    /**
+     * 标记加载失败，触发 onError 回调。
+     */
+    _fail(reason, message) {
+        if (this._isDone)
+            return;
+        this._isDone = true;
+        this._error = message;
+        this._failReason = reason;
+        for (const cb of this._errorCbs) {
+            this._safeCall(() => cb(reason, message));
+        }
+        this._clearCallbacks();
+    }
+    /**
+     * 由 SceneSystem 在确认取消后调用，正式标记为已取消并触发 onError。
+     * 使用 SceneLoadFailReason.Cancelled 常量（需值导入，不能 import type）。
+     */
+    _markCancelled() {
+        if (this._isDone)
+            return;
+        this._isCancelled = true;
+        this._fail(SceneTypes_1.SceneLoadFailReason.Cancelled, "Scene load was cancelled.");
+    }
+    // ── 私有辅助 ──────────────────────────────────────────────────────────────
+    _safeCall(fn) {
+        try {
+            fn();
+        }
+        catch (e) {
+            console.error(`[SceneProgressHandle] Callback error for "${this.key}":`, e);
+        }
+    }
+    _clearCallbacks() {
+        this._progressCbs.length = 0;
+        this._completeCbs.length = 0;
+        this._errorCbs.length = 0;
+    }
+}
+exports.SceneProgressHandle = SceneProgressHandle;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU2NlbmVQcm9ncmVzc0hhbmRsZS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1NjZW5lU3lzdGVtL1NjZW5lUHJvZ3Jlc3NIYW5kbGUudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7OztHQWNHOzs7QUFFSCw2RUFBNkU7QUFDN0UsbURBQW1EO0FBQ25ELDZDQUFzRDtBQVN0RCxpRkFBaUY7QUFFakYsTUFBYSxtQkFBbUI7SUFFNUIsdUVBQXVFO0lBRTlELEdBQUcsQ0FBUztJQUViLFNBQVMsR0FBZSxDQUFDLENBQUM7SUFDMUIsT0FBTyxHQUFpQixLQUFLLENBQUM7SUFDOUIsWUFBWSxHQUFZLEtBQUssQ0FBQztJQUM5QixNQUFNLEdBQXdCLElBQUksQ0FBQztJQUNuQyxXQUFXLEdBQWdDLElBQUksQ0FBQztJQUV4RCxJQUFJLFFBQVEsS0FBMEIsT0FBTyxJQUFJLENBQUMsU0FBUyxDQUFDLENBQUksQ0FBQztJQUNqRSxJQUFJLE1BQU0sS0FBNEIsT0FBTyxJQUFJLENBQUMsT0FBTyxDQUFDLENBQU0sQ0FBQztJQUNqRSxJQUFJLFdBQVcsS0FBdUIsT0FBTyxJQUFJLENBQUMsWUFBWSxDQUFDLENBQUMsQ0FBQztJQUNqRSxJQUFJLEtBQUssS0FBNkIsT0FBTyxJQUFJLENBQUMsTUFBTSxDQUFDLENBQU8sQ0FBQztJQUVqRSx5RUFBeUU7SUFFeEQsWUFBWSxHQUFpQixFQUFFLENBQUM7SUFDaEMsWUFBWSxHQUFpQixFQUFFLENBQUM7SUFDaEMsU0FBUyxHQUFvQixFQUFFLENBQUM7SUFFakQsNEVBQTRFO0lBRTVFLFlBQVksR0FBVztRQUNuQixJQUFJLENBQUMsR0FBRyxHQUFHLEdBQUcsQ0FBQztJQUNuQixDQUFDO0lBRUQseUVBQXlFO0lBRXpFLFVBQVUsQ0FBQyxFQUFjO1FBQ3JCLElBQUksSUFBSSxDQUFDLE9BQU8sRUFBRSxDQUFDO1lBQ2Ys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

@@ -1,0 +1,115 @@
+"use strict";
+/**
+ * SaveStorage — 基于 System.IO 的跨平台存储适配器（Adapter Pattern）
+ *
+ * 核心特性：
+ *   - 根路径使用 UnityEngine.Application.persistentDataPath
+ *     → PC（Windows/macOS/Linux）、Android、iOS 均可读写
+ *   - Dev 模式（textMode=true）：
+ *       string → File.WriteAllText → .json 明文文件（可直接用文本编辑器打开）
+ *   - Release 模式（textMode=false）：
+ *       string → UTF-8 字节 → File.WriteAllBytes → .sav 二进制文件
+ *   - 目录按需自动创建，删除操作均做存在性检查（静默忽略缺失项）
+ *
+ * 各平台 persistentDataPath 示例：
+ *   PC      : C:/Users/{user}/AppData/LocalLow/{company}/{product}
+ *   Android : /data/user/0/{packageName}/files
+ *   iOS     : /var/mobile/Containers/Data/Application/{UUID}/Documents
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PlatformSaveStorage = void 0;
+const csharp_1 = require("csharp");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const _CS = csharp_1.System;
+const SysPath = _CS.IO.Path;
+const SysFile = _CS.IO.File;
+const SysDir = _CS.IO.Directory;
+const Encoding = _CS.Text.Encoding;
+// ─── PlatformSaveStorage ──────────────────────────────────────────────────────
+class PlatformSaveStorage {
+    _root;
+    _textMode;
+    /**
+     * @param subDir    存档根目录名称（相对于 persistentDataPath），默认 "Saves"
+     * @param textMode  true = Dev 模式，使用明文 WriteAllText；
+     *                  false = Release 模式，使用二进制 WriteAllBytes（默认）
+     */
+    constructor(subDir = "Saves", textMode = false) {
+        this._root = SysPath.Combine(csharp_1.UnityEngine.Application.persistentDataPath, subDir);
+        this._textMode = textMode;
+        SysDir.CreateDirectory(this._root);
+    }
+    get rootPath() { return this._root; }
+    // ── 核心 IO ───────────────────────────────────────────────────────────────
+    write(relativePath, content) {
+        const fullPath = this._abs(relativePath);
+        const dir = SysPath.GetDirectoryName(fullPath);
+        if (dir)
+            SysDir.CreateDirectory(dir);
+        if (this._textMode) {
+            // Dev 模式：明文 UTF-8 文本，可直接用编辑器打开
+            SysFile.WriteAllText(fullPath, content, Encoding.UTF8);
+        }
+        else {
+            // Release 模式：UTF-8 字节写入二进制文件
+            SysFile.WriteAllBytes(fullPath, Encoding.UTF8.GetBytes(content));
+        }
+    }
+    read(relativePath) {
+        const fullPath = this._abs(relativePath);
+        if (!SysFile.Exists(fullPath))
+            return null;
+        if (this._textMode) {
+            return SysFile.ReadAllText(fullPath, Encoding.UTF8);
+        }
+        else {
+            return Encoding.UTF8.GetString(SysFile.ReadAllBytes(fullPath));
+        }
+    }
+    // ── 文件操作 ──────────────────────────────────────────────────────────────
+    deleteFile(relativePath) {
+        const fullPath = this._abs(relativePath);
+        if (SysFile.Exists(fullPath))
+            SysFile.Delete(fullPath);
+    }
+    fileExists(relativePath) {
+        return SysFile.Exists(this._abs(relativePath));
+    }
+    // ── 目录操作 ──────────────────────────────────────────────────────────────
+    ensureDir(relativeDirPath) {
+        SysDir.CreateDirectory(this._abs(relativeDirPath));
+    }
+    deleteDir(relativeDirPath) {
+        const fullPath = this._abs(relativeDirPath);
+        if (SysDir.Exists(fullPath))
+            SysDir.Delete(fullPath, true);
+    }
+    listFiles(relativeDirPath) {
+        const fullPath = this._abs(relativeDirPath);
+        if (!SysDir.Exists(fullPath))
+            return [];
+        const csFiles = SysDir.GetFiles(fullPath);
+        const result = [];
+        for (let i = 0; i < csFiles.Length; i++) {
+            result.push(SysPath.GetFileName(csFiles[i]));
+        }
+        return result;
+    }
+    listRootDirs() {
+        if (!SysDir.Exists(this._root))
+            return [];
+        const csDirs = SysDir.GetDirectories(this._root);
+        const result = [];
+        for (let i = 0; i < csDirs.Length; i++) {
+            result.push(SysPath.GetFileName(csDirs[i]));
+        }
+        return result;
+    }
+    // ── 私有工具 ──────────────────────────────────────────────────────────────
+    /** 将相对路径转换为绝对路径 */
+    _abs(relativePath) {
+        return SysPath.Combine(this._root, relativePath);
+    }
+}
+exports.PlatformSaveStorage = PlatformSaveStorage;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU2F2ZVN0b3JhZ2UuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9TYXZlTW9kdWxlL1NhdmVTdG9yYWdlLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7OztHQWdCRzs7O0FBR0gsbUNBQTZDO0FBbUM3Qyw4REFBOEQ7QUFDOUQsTUFBTSxHQUFHLEdBQVEsZUFBYSxDQUFDO0FBQy9CLE1BQU0sT0FBTyxHQUFJLEdBQUcsQ0FBQyxFQUFFLENBQUMsSUFBc0IsQ0FBQztBQUMvQyxNQUFNLE9BQU8sR0FBSSxHQUFHLENBQUMsRUFBRSxDQUFDLElBQXNCLENBQUM7QUFDL0MsTUFBTSxNQUFNLEdBQUssR0FBRyxDQUFDLEVBQUUsQ0FBQyxTQUFxQixDQUFDO0FBQzlDLE1BQU0sUUFBUSxHQUFHLEdBQUcsQ0FBQyxJQUFJLENBQUMsUUFBd0IsQ0FBQztBQUVuRCxpRkFBaUY7QUFFakYsTUFBYSxtQkFBbUI7SUFFWCxLQUFLLENBQWE7SUFDbEIsU0FBUyxDQUFVO0lBRXBDOzs7O09BSUc7SUFDSCxZQUFZLFNBQWlCLE9BQU8sRUFBRSxXQUFvQixLQUFLO1FBQzNELElBQUksQ0FBQyxLQUFLLEdBQU8sT0FBTyxDQUFDLE9BQU8sQ0FDNUIsb0JBQVcsQ0FBQyxXQUFXLENBQUMsa0JBQWtCLEVBQzFDLE1BQU0sQ0FDVCxDQUFDO1FBQ0YsSUFBSSxDQUFDLFNBQVMsR0FBRyxRQUFRLENBQUM7UUFDMUIsTUFBTSxDQUFDLGVBQWUsQ0FBQyxJQUFJLENBQUMsS0FBSyxDQUFDLENBQUM7SUFDdkMsQ0FBQztJQUVELElBQUksUUFBUSxLQUFhLE9BQU8sSUFBSSxDQUFDLEtBQUssQ0FBQyxDQUFDLENBQUM7SUFFN0MsMkVBQTJFO0lBRTNFLEtBQUssQ0FBQyxZQUFvQixFQUFFLE9BQWU7UUFDdkMsTUFBTSxRQUFRLEdBQUcsSUFBSSxDQUFDLElBQUksQ0FBQyxZQUFZ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

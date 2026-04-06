@@ -1,0 +1,20 @@
+"use strict";
+/**
+ * ResModule 类型定义
+ *
+ * 约定：
+ *   - Addressable 加载的资源只能通过 Addressable 卸载
+ *   - Resources 加载的资源只能通过 Resources 卸载
+ *   - GameObject 的实例化与销毁必须使用 Addressable 接口，
+ *     禁止直接调用 Object.Instantiate / Object.Destroy
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ResLoadType = void 0;
+// ─── 加载来源 ─────────────────────────────────────────────────────────────────
+exports.ResLoadType = {
+    /** 通过 Addressable Asset System 加载（推荐：异步、引用计数、支持热更新） */
+    Addressable: "addressable",
+    /** 通过 Unity Resources 文件夹加载（适合体积小、无需热更新的内置资源） */
+    Resources: "resources",
+};
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiUmVzVHlwZXMuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9SZXNNb2R1bGUvUmVzVHlwZXMudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7OztHQVFHOzs7QUFFSCw2RUFBNkU7QUFFaEUsUUFBQSxXQUFXLEdBQUc7SUFDdkIsdURBQXVEO0lBQ3ZELFdBQVcsRUFBRSxhQUFhO0lBQzFCLGlEQUFpRDtJQUNqRCxTQUFTLEVBQUUsV0FBVztDQUNoQixDQUFDIn0=

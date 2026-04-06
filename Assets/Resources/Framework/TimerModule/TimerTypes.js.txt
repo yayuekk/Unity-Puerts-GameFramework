@@ -1,0 +1,21 @@
+"use strict";
+/**
+ * TimerTypes — 计时器模块公共类型定义
+ *
+ * 设计原则：
+ *   - 仅包含对外暴露的枚举、接口，与内部实现完全解耦
+ *   - 内部数据结构（TimerEntry）不在此文件中，见 TimerEntry.ts
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TimerType = void 0;
+// ─── 计时器类型 ────────────────────────────────────────────────────────────────
+/** 计时器驱动类型 */
+exports.TimerType = {
+    /** 按帧触发：每 N 帧触发一次（与帧率强相关） */
+    Frame: "frame",
+    /** 按秒触发：每 N 秒触发一次 */
+    Second: "second",
+    /** 按分钟触发：每 N 分钟触发一次 */
+    Minute: "minute",
+};
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVGltZXJUeXBlcy5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1RpbWVyTW9kdWxlL1RpbWVyVHlwZXMudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7R0FNRzs7O0FBRUgsNkVBQTZFO0FBRTdFLGNBQWM7QUFDRCxRQUFBLFNBQVMsR0FBRztJQUNyQiw2QkFBNkI7SUFDN0IsS0FBSyxFQUFFLE9BQU87SUFDZCxxQkFBcUI7SUFDckIsTUFBTSxFQUFFLFFBQVE7SUFDaEIsdUJBQXVCO0lBQ3ZCLE1BQU0sRUFBRSxRQUFRO0NBQ1YsQ0FBQyJ9

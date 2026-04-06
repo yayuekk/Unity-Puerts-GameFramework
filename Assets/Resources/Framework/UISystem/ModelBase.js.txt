@@ -1,0 +1,34 @@
+"use strict";
+/**
+ * ModelBase — MVC 数据层基类
+ *
+ * 职责：
+ *   - 持有界面相关的运行时数据状态
+ *   - 提供数据变更通知（推荐结合 EventSystem 的模块总线）
+ *
+ * 依赖方向（单向）：
+ *   Service → Model → （通过事件通知）→ View
+ *   Model 不直接持有 View 或 Service 引用。
+ *
+ * 生命周期：
+ *   _setup(ctx) → _onInit() [onInit]   初始化数据
+ *   _onDestroy()            [onDestroy] 释放数据资源
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ModelBase = void 0;
+class ModelBase {
+    /** 当前 UI 的运行时上下文，可通过 this._ctx.name / this._ctx.config 访问元数据 */
+    _ctx;
+    // ── 内部生命周期（由 UISystem 调用） ──────────────────────────────────────
+    _setup(ctx) {
+        this._ctx = ctx;
+    }
+    _onInit() {
+        this.onInit();
+    }
+    _onDestroy() {
+        this.onDestroy();
+    }
+}
+exports.ModelBase = ModelBase;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiTW9kZWxCYXNlLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vVHNQcm9qZWN0X1REL3NyYy9GcmFtZXdvcmsvVUlTeXN0ZW0vTW9kZWxCYXNlLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7R0FjRzs7O0FBSUgsTUFBc0IsU0FBUztJQUUzQixnRUFBZ0U7SUFDdEQsSUFBSSxDQUFjO0lBRTVCLGtFQUFrRTtJQUVsRSxNQUFNLENBQUMsR0FBZTtRQUNsQixJQUFJLENBQUMsSUFBSSxHQUFHLEdBQUcsQ0FBQztJQUNwQixDQUFDO0lBRUQsT0FBTztRQUNILElBQUksQ0FBQyxNQUFNLEVBQUUsQ0FBQztJQUNsQixDQUFDO0lBRUQsVUFBVTtRQUNOLElBQUksQ0FBQyxTQUFTLEVBQUUsQ0FBQztJQUNyQixDQUFDO0NBZUo7QUFoQ0QsOEJBZ0NDIn0=

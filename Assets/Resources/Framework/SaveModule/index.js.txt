@@ -1,0 +1,26 @@
+"use strict";
+/**
+ * SaveSystem 公共 API 出口
+ * 外部代码统一从此文件导入，无需关心内部目录结构。
+ *
+ * 使用示例：
+ *   import { SaveSystem, SaveMode, ISaveSystem, ISaveModule, ISaveHandle } from "../SaveSystem";
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SAVE_FILE_EXT = exports.PlatformSaveStorage = exports.JsonSaveSerializer = exports.SAVE_MODE_EXT = exports.SaveMode = exports.SaveSystem = void 0;
+// ── 核心系统 ──────────────────────────────────────────────────────────────────
+var SaveSystem_1 = require("./SaveSystem");
+Object.defineProperty(exports, "SaveSystem", { enumerable: true, get: function () { return SaveSystem_1.SaveSystem; } });
+// ── 存档模式 ──────────────────────────────────────────────────────────────────
+var SaveTypes_1 = require("./SaveTypes");
+Object.defineProperty(exports, "SaveMode", { enumerable: true, get: function () { return SaveTypes_1.SaveMode; } });
+Object.defineProperty(exports, "SAVE_MODE_EXT", { enumerable: true, get: function () { return SaveTypes_1.SAVE_MODE_EXT; } });
+// ── 可替换实现（供自定义扩展时使用） ─────────────────────────────────────────
+var SaveSerializer_1 = require("./SaveSerializer");
+Object.defineProperty(exports, "JsonSaveSerializer", { enumerable: true, get: function () { return SaveSerializer_1.JsonSaveSerializer; } });
+var SaveStorage_1 = require("./SaveStorage");
+Object.defineProperty(exports, "PlatformSaveStorage", { enumerable: true, get: function () { return SaveStorage_1.PlatformSaveStorage; } });
+// ── 公共类型 ──────────────────────────────────────────────────────────────────
+var SaveTypes_2 = require("./SaveTypes");
+Object.defineProperty(exports, "SAVE_FILE_EXT", { enumerable: true, get: function () { return SaveTypes_2.SAVE_FILE_EXT; } });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9TYXZlTW9kdWxlL2luZGV4LnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7O0dBTUc7OztBQUVILDZFQUE2RTtBQUM3RSwyQ0FBc0Q7QUFBN0Msd0dBQUEsVUFBVSxPQUFBO0FBR25CLDZFQUE2RTtBQUM3RSx5Q0FBc0Q7QUFBN0MscUdBQUEsUUFBUSxPQUFBO0FBQUUsMEdBQUEsYUFBYSxPQUFBO0FBRWhDLGdFQUFnRTtBQUNoRSxtREFBMEQ7QUFBakQsb0hBQUEsa0JBQWtCLE9BQUE7QUFDM0IsNkNBQXVEO0FBQTlDLGtIQUFBLG1CQUFtQixPQUFBO0FBRTVCLDZFQUE2RTtBQUM3RSx5Q0FBcUQ7QUFBNUMsMEdBQUEsYUFBYSxPQUFBIn0=

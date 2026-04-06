@@ -1,0 +1,149 @@
+"use strict";
+/**
+ * SaveSystem — 存档系统核心模块
+ *
+ * 职责：
+ *   1. 实现 IModule，接入 GameFramework 生命周期（onInit / onShutdown）
+ *   2. 按需创建并缓存 SaveModuleHandle，同一模块名保证唯一实例
+ *   3. 通过构造参数支持序列化策略与存储适配器的依赖注入
+ *   4. 管理存档模式（Dev / Release）并在模式切换时自动清除旧格式存档
+ *
+ * 存档目录结构（Dev 模式）：
+ *   {Application.persistentDataPath}/
+ *     Saves/
+ *       Player/
+ *         slot_0.json      ← 明文 JSON，可直接阅读
+ *
+ * 存档目录结构（Release 模式）：
+ *   {Application.persistentDataPath}/
+ *     Saves/
+ *       Player/
+ *         slot_0.sav       ← UTF-8 二进制，不易直接阅读
+ *
+ * 模式切换机制：
+ *   - 使用 UnityEngine.PlayerPrefs 持久化上次使用的模式
+ *   - onInit 时若检测到模式与上次不同，自动删除全部旧存档并记录新模式
+ *   - 此行为仅在使用 PlatformSaveStorage 时触发（注入自定义 storage 时跳过）
+ *
+ * 注册示例：
+ *   // 根据是否在编辑器中自动选择模式
+ *   framework.registerModule(new SaveSystem({
+ *       mode: UnityEngine.Application.isEditor ? SaveMode.Dev : SaveMode.Release,
+ *   }));
+ *
+ * 使用示例：
+ *   const save = framework.getModule<SaveSystem>("SaveSystem");
+ *   const handle = save.getModule("Player").getHandle<PlayerData>("slot_0");
+ *   handle.save({ level: 5, gold: 1000 });
+ *   const data = handle.load(); // PlayerData | undefined
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SaveSystem = void 0;
+const SaveTypes_1 = require("./SaveTypes");
+const SaveSerializer_1 = require("./SaveSerializer");
+const SaveStorage_1 = require("./SaveStorage");
+const SaveModuleHandle_1 = require("./SaveModuleHandle");
+const csharp_1 = require("csharp");
+// ─── PlayerPrefs 键 ───────────────────────────────────────────────────────────
+/** 持久化存档模式的 PlayerPrefs 键名 */
+const PREF_KEY_MODE = "SaveSystem_Mode";
+// ─── SaveSystem ───────────────────────────────────────────────────────────────
+class SaveSystem {
+    moduleName = "SaveSystem";
+    _storage;
+    _serializer;
+    _mode;
+    _fileExt;
+    _options;
+    _moduleCache = new Map();
+    constructor(options = {}) {
+        this._options = options;
+        this._mode = options.mode ?? SaveTypes_1.SaveMode.Release;
+        this._fileExt = SaveTypes_1.SAVE_MODE_EXT[this._mode];
+        this._serializer = options.serializer ?? new SaveSerializer_1.JsonSaveSerializer();
+        if (options.storage) {
+            this._storage = options.storage;
+        }
+    }
+    // ── IModule 生命周期 ──────────────────────────────────────────────────────
+    onInit(_fw) {
+        if (!this._storage) {
+            const isTextMode = this._mode === SaveTypes_1.SaveMode.Dev;
+            this._storage = new SaveStorage_1.PlatformSaveStorage(this._options.subDir ?? "Saves", isTextMode);
+            this._detectAndHandleModeChange();
+        }
+        console.log(`[SaveSystem] Initialized. Mode: ${this._mode}, Ext: ${this._fileExt}, Root: ${this._storage.rootPath}`);
+    }
+    onShutdown() {
+        this._moduleCache.clear();
+        console.log("[SaveSystem] Shutdown.");
+    }
+    // ── ISaveSystem ───────────────────────────────────────────────────────────
+    get mode() {
+        return this._mode;
+    }
+    get serializer() {
+        return this._serializer;
+    }
+    getModule(moduleName) {
+        this._assertStorage();
+        let handle = this._moduleCache.get(moduleName);
+        if (!handle) {
+            handle = new SaveModuleHandle_1.SaveModuleHandle(moduleName, this._storage, this._serializer, this._fileExt);
+            this._moduleCache.set(moduleName, handle);
+        }
+        return handle;
+    }
+    clearModule(moduleName) {
+        this._assertStorage();
+        this._storage.deleteDir(moduleName);
+        this._moduleCache.delete(moduleName);
+    }
+    listModules() {
+        this._assertStorage();
+        return this._storage.listRootDirs();
+    }
+    // ── 运行时替换序列化策略 ──────────────────────────────────────────────────
+    /**
+     * 替换序列化策略（可在运行时动态切换）。
+     * 会清空模块句柄缓存，确保后续 getModule 使用新序列化器创建句柄。
+     * 已写入磁盘的存档不受影响，需使用相同序列化器才能正确读取。
+     */
+    setSerializer(serializer) {
+        this._serializer = serializer;
+        this._moduleCache.clear();
+        return this;
+    }
+    // ── 模式切换检测（私有） ──────────────────────────────────────────────────
+    /**
+     * 检测存档模式是否与上次运行时不同。
+     * 若不同，则清除所有旧存档后更新 PlayerPrefs 记录。
+     * 仅在使用 PlatformSaveStorage 时调用（注入自定义 storage 时跳过）。
+     */
+    _detectAndHandleModeChange() {
+        const prevMode = csharp_1.UnityEngine.PlayerPrefs.GetString(PREF_KEY_MODE, "");
+        if (prevMode !== "" && prevMode !== this._mode) {
+            console.warn(`[SaveSystem] Save mode changed: "${prevMode}" → "${this._mode}". ` +
+                `Clearing all existing saves to avoid format mismatch.`);
+            this._clearAllSaves();
+        }
+        csharp_1.UnityEngine.PlayerPrefs.SetString(PREF_KEY_MODE, this._mode);
+        csharp_1.UnityEngine.PlayerPrefs.Save();
+    }
+    /** 删除所有模块目录下的存档（根目录本身保留） */
+    _clearAllSaves() {
+        const dirs = this._storage.listRootDirs();
+        for (const dir of dirs) {
+            this._storage.deleteDir(dir);
+        }
+        this._moduleCache.clear();
+    }
+    // ── 私有工具 ──────────────────────────────────────────────────────────────
+    _assertStorage() {
+        if (!this._storage) {
+            throw new Error("[SaveSystem] Not initialized. Call framework.init() first.");
+        }
+    }
+}
+exports.SaveSystem = SaveSystem;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU2F2ZVN5c3RlbS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1NhdmVNb2R1bGUvU2F2ZVN5c3RlbS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7R0FxQ0c7OztBQUlILDJDQUF1RDtBQUN2RCxxREFBNEQ7QUFDNUQsK0NBQXlEO0FBQ3pELHlEQUE4RDtBQUM5RCxtQ0FBa0Q7QUFFbEQsZ0ZBQWdGO0FBRWhGLDhCQUE4QjtBQUM5QixNQUFNLGFBQWEsR0FBRyxpQkFBaUIsQ0FBQztBQWtDeEMsaUZBQWlGO0FBRWpGLE1BQWEsVUFBVTtJQUVWLFVBQVUsR0FBRyxZQUFZLENBQUM7SUFFM0IsUUFBUSxDQUE4QjtJQUN0QyxXQUFXLENBQWtCO0lBRXBCLEtBQUssQ0FBa0I7SUFDdkIsUUFBUSxDQUFhO0lBQ3JCLFFBQVEsQ0FBd0I7SUFDaEMsWUFBWSxHQUFrQyxJQUFJLEdBQUcsRUFBRSxDQUFDO0lBRXpFLFlBQVksVUFBNkIsRUFBRTtRQUN2QyxJQUFJLENBQUMsUUFBUSxHQUFNLE9BQU8sQ0FBQztRQUMzQixJQUFJLENBQUMsS0FBSyxHQUFTLE9BQU8sQ0FBQyxJQUFJLElBQUksb0JBQVEsQ0FBQyxPQUFPLENBQUM7UUFDcEQsSUFBSSxDQUFDLFFBQVEsR0FBTSx5QkFBYSxDQUFDLElBQUksQ0FBQyxLQUFLLENBQUMsQ0FBQztRQUM3QyxJQUFJLENBQUMsV0FBVyxHQUFHLE9BQU8sQ0FBQyxVQUFVLElBQUksSUFBSSxtQ0FBa0IsRUFBRSxDQUFDO1FBQ2xFLElBQUksT0FBTyxDQUFDLE9BQU8sRUFBRSxDQUFDO1lBQ2xCLElBQUksQ0FBQyxRQUFRLEdBQUcsT0FBTyxDQUFDLE9BQU8sQ0FBQztRQUNwQyxDQUFDO0lBQ0wsQ0FBQztJQUVELHlFQUF5RTtJQUV6RSxNQUFNLENBQUMsR0FBa0I7UUFDckIs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

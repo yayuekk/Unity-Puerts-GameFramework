@@ -1,0 +1,156 @@
+"use strict";
+/**
+ * ObjectPool — 单类型对象池核心实现
+ *
+ * 职责：
+ *   - 维护闲置对象栈（LIFO，利用 CPU 缓存局部性）与使用中对象集合
+ *   - 通过引用计数（refCount = inUse 数量）驱动空闲计时器
+ *   - 引用计数归零并持续空闲超过 autoDestroyDelay 后，通知上层自动销毁
+ *   - 提供 warmupSync() 供分帧预热调度器逐帧批量填充
+ *
+ * 设计约定：
+ *   - get()       idleSeconds 重置，refCount + 1，调用 factory.onGet
+ *   - return()    refCount - 1，调用 factory.onReturn；超出 maxCapacity 则调用 factory.onDestroy
+ *   - destroy()   清空闲置栈并标记 isAlive = false；使用中对象不受影响（由调用方管理）
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ObjectPool = void 0;
+// ─── ObjectPool ───────────────────────────────────────────────────────────────
+class ObjectPool {
+    name;
+    _factory;
+    _maxCapacity;
+    _autoDestroyDelay;
+    /** 闲置对象栈（LIFO） */
+    _available = [];
+    /** 使用中对象集合，用于幂等性校验 */
+    _inUse = new Set();
+    _idleSeconds = 0;
+    _isAlive = true;
+    // ── 构造 ──────────────────────────────────────────────────────────────────
+    constructor(config) {
+        this.name = config.name;
+        this._factory = config.factory;
+        this._maxCapacity = config.maxCapacity ?? 0;
+        this._autoDestroyDelay = config.autoDestroyDelay ?? 60;
+    }
+    // ── IPool 属性 ────────────────────────────────────────────────────────────
+    get available() { return this._available.length; }
+    get inUse() { return this._inUse.size; }
+    get total() { return this._available.length + this._inUse.size; }
+    get refCount() { return this._inUse.size; }
+    get isAlive() { return this._isAlive; }
+    // ── IPool 操作 ────────────────────────────────────────────────────────────
+    /**
+     * 从池中取出一个对象。
+     * 池为空时调用 factory.create() 创建新实例；空闲计时器重置。
+     */
+    get() {
+        if (!this._isAlive) {
+            throw new Error(`[ObjectPool] "${this.name}" is destroyed. Cannot get().`);
+        }
+        this._idleSeconds = 0;
+        const item = this._available.length > 0
+            ? this._available.pop()
+            : this._factory.create();
+        this._inUse.add(item);
+        this._factory.onGet(item);
+        return item;
+    }
+    /**
+     * 将对象归还池中（幂等：重复归还同一对象安全，静默忽略）。
+     * 超出 maxCapacity 时调用 factory.onDestroy 永久销毁该实例。
+     *
+     * 若池已被 destroy()（如手动 clearPool），直接调用 onDestroy 销毁对象，
+     * 避免 onReturn 访问已销毁的 poolRoot / 已释放的资产句柄。
+     */
+    return(item) {
+        if (!this._inUse.has(item))
+            return;
+        this._inUse.delete(item);
+        if (!this._isAlive) {
+            this._factory.onDestroy(item);
+            return;
+        }
+        this._factory.onReturn(item);
+        const poolFull = this._maxCapacity > 0 && this._available.length >= this._maxCapacity;
+        if (poolFull) {
+            this._factory.onDestroy(item);
+        }
+        else {
+            this._available.push(item);
+        }
+    }
+    /**
+     * 同步预热指定数量（立即批量创建，不分帧）。
+     * 实际创建数受 maxCapacity 约束；池已死时静默跳过。
+     * @returns 实际创建的对象数量（≤ count）
+     */
+    warmupSync(count) {
+        if (!this._isAlive || count <= 0)
+            return 0;
+        const room = this._maxCapacity > 0
+            ? Math.max(0, this._maxCapacity - this._available.length - this._inUse.size)
+            : count;
+        const actual = Math.min(count, room);
+        for (let i = 0; i < actual; i++) {
+            this._available.push(this._factory.create());
+        }
+        return actual;
+    }
+    /**
+     * 销毁所有闲置对象（调用 onDestroy），使用中对象不受影响。
+     * 池本身保持存活，可继续使用。
+     */
+    clear() {
+        for (const item of this._available) {
+            this._factory.onDestroy(item);
+        }
+        this._available.length = 0;
+    }
+    /**
+     * 彻底销毁对象池：清空闲置对象、调用工厂的 dispose()（如有）并标记为死亡。
+     * 调用后 isAlive = false，后续 get() 会抛出错误。
+     * 对于 ResGameObjectFactory，dispose() 会 release IResHandle，触发 ResSystem 卸载 Prefab。
+     */
+    destroy() {
+        this.clear();
+        this._factory.dispose?.();
+        this._isAlive = false;
+    }
+    getStats() {
+        return {
+            name: this.name,
+            available: this._available.length,
+            inUse: this._inUse.size,
+            total: this._available.length + this._inUse.size,
+            refCount: this._inUse.size,
+            isWarming: false, // 由 PoolSystem.getAllStats() 填充实际值
+            idleSeconds: this._idleSeconds,
+        };
+    }
+    // ── 内部接口（供 PoolSystem 调用）─────────────────────────────────────────
+    /**
+     * 每帧更新空闲计时器，返回 true 表示应由 PoolSystem 触发自动销毁。
+     *
+     * 规则：
+     *   - refCount > 0（有对象在外部使用）时重置计时器
+     *   - refCount = 0 且 autoDestroyDelay > 0 时累积空闲时间
+     *   - 空闲时间超出阈值 → 返回 true
+     */
+    updateIdleTimer(dt) {
+        if (!this._isAlive)
+            return true;
+        if (this._autoDestroyDelay <= 0)
+            return false;
+        if (this._inUse.size === 0) {
+            this._idleSeconds += dt;
+            return this._idleSeconds >= this._autoDestroyDelay;
+        }
+        // 有对象在外部使用时，保持计时器清零（避免"一还清即超时"）
+        this._idleSeconds = 0;
+        return false;
+    }
+}
+exports.ObjectPool = ObjectPool;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiT2JqZWN0UG9vbC5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1Bvb2xNb2R1bGUvT2JqZWN0UG9vbC50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7R0FhRzs7O0FBSUgsaUZBQWlGO0FBRWpGLE1BQWEsVUFBVTtJQUVWLElBQUksQ0FBUztJQUVMLFFBQVEsQ0FBK0I7SUFDdkMsWUFBWSxDQUFjO0lBQzFCLGlCQUFpQixDQUFTO0lBRTNDLGtCQUFrQjtJQUNELFVBQVUsR0FBVSxFQUFFLENBQUM7SUFDeEMsc0JBQXNCO0lBQ0wsTUFBTSxHQUFlLElBQUksR0FBRyxFQUFFLENBQUM7SUFFeEMsWUFBWSxHQUFZLENBQUMsQ0FBQztJQUMxQixRQUFRLEdBQWdCLElBQUksQ0FBQztJQUVyQywyRUFBMkU7SUFFM0UsWUFBWSxNQUFzQjtRQUM5QixJQUFJLENBQUMsSUFBSSxHQUFpQixNQUFNLENBQUMsSUFBSSxDQUFDO1FBQ3RDLElBQUksQ0FBQyxRQUFRLEdBQWEsTUFBTSxDQUFDLE9BQU8sQ0FBQztRQUN6QyxJQUFJLENBQUMsWUFBWSxHQUFTLE1BQU0sQ0FBQyxXQUFXLElBQVMsQ0FBQyxDQUFDO1FBQ3ZELElBQUksQ0FBQyxpQkFBaUIsR0FBSSxNQUFNLENBQUMsZ0JBQWdCLElBQUksRUFBRSxDQUFDO0lBQzVELENBQUM7SUFFRCwyRUFBMkU7SUFFM0UsSUFBSSxTQUFTLEtBQWEsT0FBTyxJQUFJLENBQUMsVUFBVSxDQUFDLE1BQU0sQ0FBQyxDQUFDLENBQUM7SUFDMUQsSUFBSSxLQUFLLEtBQWlCLE9BQU8sSUFBSSxDQUFDLE1BQU0sQ0FBQyxJQUFJLENBQUMsQ0FBQyxDQUFDO0lBQ3BELElBQUksS0FBSyxLQUFpQixPQUFPLElBQUksQ0FBQyxVQUFVLENBQUMsTUFBTSxHQUFHLElBQUksQ0FBQyxNQUFNLENBQUMsSUFBSSxDQUFDLENBQUMsQ0FB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

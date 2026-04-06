@@ -1,0 +1,56 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ExampleDemo = void 0;
+class ExampleDemo {
+    _framework;
+    _gas;
+    _log;
+    _event;
+    _pool;
+    _res;
+    _timer;
+    constructor(_framework, _gas) {
+        this._framework = _framework;
+        this._gas = _gas;
+        this._log = this._framework.log;
+        this._event = this._framework.event;
+        this._pool = this._framework.pool;
+        this._res = this._framework.res;
+        this._timer = this._framework.timer;
+    }
+    Init() {
+        // 监听事件（必须传 { context: this }，否则回调内 this 会丢失，this._log 为空）
+        const handle = this._event.on("player:levelUp", this.method1, { context: this });
+        this._event.emit("player:levelUp", 5);
+        this.LoadGo();
+    }
+    async LoadGo() {
+        const bulletPool = await this._pool.createGoPoolAsync("Cube", {
+            name: "Cube_Pool",
+            initialCapacity: 10, // 初始预热数量
+            maxCapacity: 50, // 最大容量（0=不限）
+            autoDestroyDelay: 60000, // 空闲多少秒后自动销毁池（可选）
+        });
+        const bullet = bulletPool.get();
+        bullet.SetActive(true);
+    }
+    async LoadSprite() {
+        // 异步加载（返回句柄，用完必须 release）
+        const handle = await this._res.loadAsync("main");
+        const sprite = handle.asset; // 实际的 C# Sprite 对象
+        this._log.info("====>资源" + sprite.name + "====>" + typeof (sprite));
+        // 用完后释放（计数归零时真正卸载）
+        handle.release();
+    }
+    method1(newLevel) {
+        console.log(`玩家升级到====> ${newLevel} 级！`);
+        this._log.info(`玩家升级到====> ${newLevel} 级！`);
+        // 3 秒后执行一次
+        const handle = this._timer.addSecondTimer(3, () => {
+            console.log("====>3秒到！");
+            this.LoadSprite();
+        });
+    }
+}
+exports.ExampleDemo = ExampleDemo;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiRXhhbXBsZS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvVERfR2FtZS9HYW1lTGF1bmNoTW9kdWxlL0V4YW1wbGUudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6Ijs7O0FBYUEsTUFBYSxXQUFXO0lBRVosVUFBVSxDQUFpQjtJQUMzQixJQUFJLENBQVk7SUFFaEIsSUFBSSxDQUFlO0lBRW5CLE1BQU0sQ0FBaUI7SUFFdkIsS0FBSyxDQUFlO0lBRXBCLElBQUksQ0FBYztJQUVsQixNQUFNLENBQWdCO0lBRTlCLFlBQVksVUFBMEIsRUFBRSxJQUFlO1FBRW5ELElBQUksQ0FBQyxVQUFVLEdBQUcsVUFBVSxDQUFBO1FBQzVCLElBQUksQ0FBQyxJQUFJLEdBQUcsSUFBSSxDQUFBO1FBQ2hCLElBQUksQ0FBQyxJQUFJLEdBQUcsSUFBSSxDQUFDLFVBQVUsQ0FBQyxHQUFHLENBQUE7UUFDL0IsSUFBSSxDQUFDLE1BQU0sR0FBRyxJQUFJLENBQUMsVUFBVSxDQUFDLEtBQUssQ0FBQTtRQUNuQyxJQUFJLENBQUMsS0FBSyxHQUFHLElBQUksQ0FBQyxVQUFVLENBQUMsSUFBSSxDQUFBO1FBQ2pDLElBQUksQ0FBQyxJQUFJLEdBQUcsSUFBSSxDQUFDLFVBQVUsQ0FBQyxHQUFHLENBQUE7UUFDL0IsSUFBSSxDQUFDLE1BQU0sR0FBRyxJQUFJLENBQUMsVUFBVSxDQUFDLEtBQUssQ0FBQTtJQUN2QyxDQUFDO0lBR00sSUFBSTtRQUVQLDBEQUEwRDtRQUMxRCxNQUFNLE1BQU0sR0FBRyxJQUFJLENBQUMsTUFBTSxDQUFDLEVBQUUsQ0FBQyxnQkFBZ0IsRUFBRSxJQUFJLENBQUMsT0FBTyxFQUFFLEVBQUUsT0FBTyxFQUFFLElBQUksRUFBRSxDQUFDLENBQUE7UUFFaEYsSUFBSSxDQUFDLE1BQU0sQ0FBQyxJQUFJLENBQUMsZ0JBQWdCLEVBQUUsQ0FBQyxDQUFDLENBQUM7UUFHdEMsSUFBSSxDQUFDLE1BQU0sRUFBRSxDQUFBO0lBQ2pCLENBQUM7SUFFTyxLQUFLLENBQUMsTUFBTTtRQUNoQixNQUFNLFVBQVUsR0FBRyxNQUFNLElBQUksQ0FBQyxLQUFLLENBQUMsaUJBQWlCLENBQUMsTUFBTSxFQUFFO1lBQzFELElBQUksRUFBZ0IsV0FBVztZQUMvQixlQUFlLEVBQUssRUFBRSxFQUFJLFNBQVM7WUFDbkMsV0FBVyxFQUFTLEVBQUUsRUFBSyxhQUFhO1lBQ3hDLGdCQUFnQixFQUFJLEtBQUssRUFBSyxrQkFBa0I7U0FDbkQsQ0FBQyxDQUFDO1FBRUgsTUFBTSxNQUFNLEdBQUcsVUFBVSxDQUFDLEdBQUcsRUFBRSxDQUFDO1FBQ2hDLE1BQU0sQ0FBQyxTQUFTLENBQUMsSUFBSSxDQUFDLENBQUM7SUFDM0IsQ0FBQztJQUVPLEtBQUssQ0FBQyxVQUFVO1FBQ3BCLDBCQUEwQjtRQUMxQixNQUFNLE1BQU0sR0FBRyxNQUFNLElBQUksQ0FBQyxJQUFJLENBQUMsU0FBUyxDQUFxQixNQUFNLENBQUMsQ0FBQztRQUNyRSxNQUFNLE1BQU0sR0FBRyxNQUFNLENBQUMsS0FBSyxDQUFDLENBQUMsbUJBQW1CO1FBQ2hELElBQUksQ0FBQyxJQUFJLENBQUMsSUFBSSxDQUFDLFNBQVMsR0FBRyxNQUFNLENBQUMsSUFBSSxHQUFHLE9BQU8sR0FBRyxPQUFNLENBQUMsTUFBTSxDQUFDLENBQUMsQ0FBQztRQUNuRSxtQkFBbUI7UUFDbkIsTUFBTSxDQUFDLE9BQU8sRUFBRSxDQUFDO0lBQ3JCLENBQUM7SUFHTyxPQUFPLENBQUMsUUFBZ0I7UUFFNUIsT0FBTyxDQUFDLEdBQUcsQ0FBQyxjQUFjLFFBQVEsS0FBSyxDQUFDLENBQUM7UUFDekMsSUFBSSxDQUFDLElBQUksQ0FBQyxJQUFJLENBQUMsY0FBYyxRQUFRLEtBQUssQ0FBQyxDQUFDO1FBRTVDLFdBQVc7UUFDWCxNQUFNLE1BQU0sR0FBRyxJQUFJLENBQUMsTUFBTSxDQUFDLGNBQWMsQ0FBQyxDQUFDLEVBQUUsR0FBRyxFQUFFO1lBQ2xELE9BQU8sQ0FBQyxHQUFHLENBQUMsV0FBVyxDQUFDLENBQUM7WUFDekIsSUFBSSxDQUFDLFVBQVUsRUFBRSxDQUFDO1FBQ2xCLENBQUMsQ0FBQyxDQUFBO0lBRU4sQ0FBQztDQUVKO0FBekVELGtDQXlFQyJ9

@@ -1,0 +1,35 @@
+"use strict";
+/**
+ * SaveSerializer — 序列化策略实现（Strategy Pattern）
+ *
+ * JsonSaveSerializer（默认实现）：
+ *   - 使用 JSON.stringify 将数据序列化为 JSON 字符串
+ *   - 存储层负责将字符串以 UTF-8 字节写入二进制 .sav 文件
+ *   - 轻量、无外部依赖、跨平台，且调试时可直接用文本编辑器查看内容
+ *
+ * 替换示例（如需更紧凑的格式）：
+ *   class MsgpackSerializer implements ISaveSerializer { ... }
+ *   saveSystem.setSerializer(new MsgpackSerializer());
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.JsonSaveSerializer = void 0;
+// ─── JsonSaveSerializer ────────────────────────────────────────────────────────
+class JsonSaveSerializer {
+    _space;
+    /**
+     * @param space JSON 缩进量
+     *   - 生产环境：传 undefined 或 0（紧凑格式，减小文件体积）
+     *   - 开发调试：传 2（美化缩进，便于查看存档内容）
+     */
+    constructor(space) {
+        this._space = space;
+    }
+    serialize(data) {
+        return JSON.stringify(data, null, this._space);
+    }
+    deserialize(raw) {
+        return JSON.parse(raw);
+    }
+}
+exports.JsonSaveSerializer = JsonSaveSerializer;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU2F2ZVNlcmlhbGl6ZXIuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9TYXZlTW9kdWxlL1NhdmVTZXJpYWxpemVyLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7R0FXRzs7O0FBSUgsa0ZBQWtGO0FBRWxGLE1BQWEsa0JBQWtCO0lBRVYsTUFBTSxDQUE4QjtJQUVyRDs7OztPQUlHO0lBQ0gsWUFBWSxLQUF1QjtRQUMvQixJQUFJLENBQUMsTUFBTSxHQUFHLEtBQUssQ0FBQztJQUN4QixDQUFDO0lBRUQsU0FBUyxDQUFJLElBQU87UUFDaEIsT0FBTyxJQUFJLENBQUMsU0FBUyxDQUFDLElBQUksRUFBRSxJQUFJLEVBQUUsSUFBSSxDQUFDLE1BQU0sQ0FBQyxDQUFDO0lBQ25ELENBQUM7SUFFRCxXQUFXLENBQUksR0FBVztRQUN0QixPQUFPLElBQUksQ0FBQyxLQUFLLENBQUMsR0FBRyxDQUFNLENBQUM7SUFDaEMsQ0FBQztDQUNKO0FBcEJELGdEQW9CQyJ9

@@ -1,0 +1,45 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gameplay", "Gameplay.csproj", "{52426439-eda0-a902-5f3e-131ced2722d9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework", "Framework.csproj", "{37576170-f310-7297-5c90-b998b098efc6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sirenix.OdinInspector.Modules.Unity.Addressables", "Sirenix.OdinInspector.Modules.Unity.Addressables.csproj", "{aea53000-5baf-e2b5-4b66-51d8e0dccb21}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Assembly-CSharp-Editor", "Assembly-CSharp-Editor.csproj", "{41a45273-73a6-ac40-12d4-63b812dc7955}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gameplay.Editor", "Gameplay.Editor.csproj", "{b0601ea6-de0b-57af-56cf-21a86b780063}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Assembly-CSharp", "Assembly-CSharp.csproj", "{700888ba-d2e6-a3b5-4070-ba4b8bd2f0cd}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GameModule", "GameModule.csproj", "{02b2a827-5b76-e9b7-2246-9546e250cccb}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sirenix.OdinInspector.Modules.UnityMathematics", "Sirenix.OdinInspector.Modules.UnityMathematics.csproj", "{09fdab7a-8238-d7e6-6918-56612676214d}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{52426439-eda0-a902-5f3e-131ced2722d9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{52426439-eda0-a902-5f3e-131ced2722d9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{37576170-f310-7297-5c90-b998b098efc6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{37576170-f310-7297-5c90-b998b098efc6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{aea53000-5baf-e2b5-4b66-51d8e0dccb21}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{aea53000-5baf-e2b5-4b66-51d8e0dccb21}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{41a45273-73a6-ac40-12d4-63b812dc7955}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{41a45273-73a6-ac40-12d4-63b812dc7955}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{b0601ea6-de0b-57af-56cf-21a86b780063}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{b0601ea6-de0b-57af-56cf-21a86b780063}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{700888ba-d2e6-a3b5-4070-ba4b8bd2f0cd}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{700888ba-d2e6-a3b5-4070-ba4b8bd2f0cd}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{02b2a827-5b76-e9b7-2246-9546e250cccb}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{02b2a827-5b76-e9b7-2246-9546e250cccb}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{09fdab7a-8238-d7e6-6918-56612676214d}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{09fdab7a-8238-d7e6-6918-56612676214d}.Debug|Any CPU.Build.0 = Debug|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

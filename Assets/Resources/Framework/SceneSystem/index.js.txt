@@ -1,0 +1,26 @@
+"use strict";
+/**
+ * SceneSystem 公共 API 出口
+ *
+ * 外部代码统一从此文件导入，无需关心内部目录结构。
+ *
+ * 用法示例：
+ *   import { SceneSystem, SceneLoadMode, NullSceneTransition } from "../Framework/SceneSystem";
+ *   import type { ISceneSystem, ISceneProgressHandle, ISceneTransition } from "../Framework/SceneSystem";
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DelaySceneTransition = exports.NullSceneTransition = exports.SceneTransitionBase = exports.SceneLoadFailReason = exports.SceneState = exports.SceneLoadMode = exports.SceneSystem = void 0;
+// ── 核心系统 ──────────────────────────────────────────────────────────────────
+var SceneSystem_1 = require("./SceneSystem");
+Object.defineProperty(exports, "SceneSystem", { enumerable: true, get: function () { return SceneSystem_1.SceneSystem; } });
+// ── 类型 & 常量 ───────────────────────────────────────────────────────────────
+var SceneTypes_1 = require("./SceneTypes");
+Object.defineProperty(exports, "SceneLoadMode", { enumerable: true, get: function () { return SceneTypes_1.SceneLoadMode; } });
+Object.defineProperty(exports, "SceneState", { enumerable: true, get: function () { return SceneTypes_1.SceneState; } });
+Object.defineProperty(exports, "SceneLoadFailReason", { enumerable: true, get: function () { return SceneTypes_1.SceneLoadFailReason; } });
+// ── 内置过渡策略 ──────────────────────────────────────────────────────────────
+var SceneTransition_1 = require("./SceneTransition");
+Object.defineProperty(exports, "SceneTransitionBase", { enumerable: true, get: function () { return SceneTransition_1.SceneTransitionBase; } });
+Object.defineProperty(exports, "NullSceneTransition", { enumerable: true, get: function () { return SceneTransition_1.NullSceneTransition; } });
+Object.defineProperty(exports, "DelaySceneTransition", { enumerable: true, get: function () { return SceneTransition_1.DelaySceneTransition; } });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9TY2VuZVN5c3RlbS9pbmRleC50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7O0dBUUc7OztBQUVILDZFQUE2RTtBQUM3RSw2Q0FBaUY7QUFBeEUsMEdBQUEsV0FBVyxPQUFBO0FBRXBCLDZFQUE2RTtBQUM3RSwyQ0FBZ0Y7QUFBdkUsMkdBQUEsYUFBYSxPQUFBO0FBQUUsd0dBQUEsVUFBVSxPQUFBO0FBQUUsaUhBQUEsbUJBQW1CLE9BQUE7QUFRdkQsMkVBQTJFO0FBQzNFLHFEQUlxRjtBQUhqRixzSEFBQSxtQkFBbUIsT0FBQTtBQUNuQixzSEFBQSxtQkFBbUIsT0FBQTtBQUNuQix1SEFBQSxvQkFBb0IsT0FBQSJ9

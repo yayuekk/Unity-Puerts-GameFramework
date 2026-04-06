@@ -1,0 +1,319 @@
+"use strict";
+/**
+ * PoolFactories — 内置工厂辅助类
+ *
+ * 提供四种开箱即用的工厂实现：
+ *
+ *   SimpleFactory<T>       — 普通 TypeScript 对象（new T()）
+ *   ResettableFactory<T>   — 实现 IResettable 的 TS 对象，get 时自动 reset()
+ *   GameObjectFactory      — Unity GameObject，Prefab 由外部持有（轻量版）
+ *   ResGameObjectFactory   — Unity GameObject，通过 ResSystem 托管 Prefab 资产（推荐）
+ *
+ * ─── GameObject 工厂设计要点 ──────────────────────────────────────────────────
+ *
+ * 池根节点（Pool Root）
+ *   每个 GameObject 工厂在构造时创建一个与对象池同名的根节点 GameObject，
+ *   用于收纳所有闲置对象。
+ *
+ *   【关键设计】池根节点始终通过 DontDestroyOnLoad 保存在持久化场景中，
+ *   不随关卡场景切换而被销毁。闲置对象（SetActive(false)）跟随池根节点驻留
+ *   在 DontDestroyOnLoad 场景，完全脱离当前游戏场景的生命周期管理。
+ *   poolRootParent 参数已弃用，不再影响池根节点的挂载位置。
+ *
+ * Transform 类型安全
+ *   工厂会检测 Prefab 是否含有 RectTransform 组件：
+ *   · UI 对象（RectTransform）→ 池根节点也添加 RectTransform。
+ *     闲置状态下处于 DontDestroyOnLoad 场景，SetActive(false) 不渲染，
+ *     因此不需要挂在 Canvas 下；取出时（onGet）移至 activeParent 的 Canvas 即可。
+ *   · 普通 3D 对象（Transform）→ 池根节点为普通 Transform。
+ *
+ * 对象生命周期
+ *   create()    → Instantiate(prefab, poolRoot)，SetActive(false)，驻留 DontDestroyOnLoad
+ *   onGet()     → SetParent(activeParent 或 null，保留世界坐标)，SetActive(true)，回到场景
+ *   onReturn()  → SetActive(false)，SetParent(poolRoot)，重归 DontDestroyOnLoad
+ *   onDestroy() → Object.Destroy(go)
+ *   dispose()   → Object.Destroy(poolRoot)  [+ handle.release() for ResGameObjectFactory]
+ *
+ * 主动对象的归属
+ *   onGet() 会将对象从池根节点下摘出，移至场景中显示：
+ *   · 若构造时传入了 activeParent，对象移到该节点下（适合固定的 Canvas 或场景节点）；
+ *   · 否则置于场景根（Transform.SetParent(null)），由调用方自行设置位置与父节点。
+ *   这样保证对象池销毁时（Object.Destroy(poolRoot)）不会误杀仍在使用中的对象。
+ *
+ * 防御性检测
+ *   create() / onReturn() 在执行前会通过 isGoAlive() 验证池根节点是否仍然存活。
+ *   若池根节点被外部意外销毁，create() 抛出明确错误，onReturn() 直接销毁对象并报错，
+ *   防止对已销毁节点的引用操作引发难以追踪的 Bug。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ResGameObjectFactory = exports.GameObjectFactory = exports.ResettableFactory = exports.SimpleFactory = void 0;
+// PuerTS C# 桥接：与 ResSystem 一致，不依赖可能未注入的全局 CS
+const _CS = (function () {
+    try {
+        return require("csharp");
+    }
+    catch {
+        return typeof globalThis !== "undefined" ? globalThis.CS : undefined;
+    }
+})();
+if (typeof _CS === "undefined") {
+    throw new Error("[PoolFactories] C# bridge not available: neither require('csharp') nor global CS.");
+}
+// ─── SimpleFactory ────────────────────────────────────────────────────────────
+/**
+ * 普通 TypeScript 对象工厂。
+ * 调用无参构造函数创建实例，get / return / destroy 均为空操作（由 GC 处理生命周期）。
+ */
+class SimpleFactory {
+    _ctor;
+    constructor(ctor) {
+        this._ctor = ctor;
+    }
+    create() { return new this._ctor(); }
+    onGet(_item) { }
+    onReturn(_item) { }
+    onDestroy(_item) { }
+}
+exports.SimpleFactory = SimpleFactory;
+// ─── ResettableFactory ────────────────────────────────────────────────────────
+/**
+ * 可重置 TypeScript 对象工厂。
+ * 对象需实现 IResettable；取出时自动调用 reset() 以恢复初始状态。
+ */
+class ResettableFactory {
+    _ctor;
+    constructor(ctor) {
+        this._ctor = ctor;
+    }
+    create() { return new this._ctor(); }
+    onGet(item) { item.reset(); }
+    onReturn(_item) { }
+    onDestroy(_item) { }
+}
+exports.ResettableFactory = ResettableFactory;
+// ─── 内部辅助 ─────────────────────────────────────────────────────────────────
+/**
+ * 检测 UnityEngine.Object 是否仍然存活（未被销毁）。
+ *
+ * Unity 的 GameObject 被 Destroy 后，C# 侧 == null 返回 true，
+ * 但 JS 侧的引用仍指向一个非 null 的桥接对象，无法用普通 `!= null` 判断。
+ * 此函数通过调用 GetInstanceID() 并捕获 MissingReferenceException
+ * 来可靠区分"已销毁"与"存活"两种状态。
+ */
+function isGoAlive(go) {
+    if (go == null)
+        return false;
+    try {
+        void go.GetInstanceID();
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * 安全销毁 GameObject（已被外部销毁时静默忽略）。
+ */
+function safeDestroy(go) {
+    try {
+        if (isGoAlive(go)) {
+            _CS.UnityEngine.Object.Destroy(go);
+        }
+    }
+    catch { /* ignore */ }
+}
+/**
+ * 创建对象池根节点 GameObject，并通过 DontDestroyOnLoad 将其持久化。
+ *
+ * 规则：
+ *   1. 池根节点始终置于场景根级别，并调用 DontDestroyOnLoad 使其跨场景存活，
+ *      彻底避免场景切换或意外 Destroy 导致对象池失效。
+ *   2. 若 prefab 含有 RectTransform（UI 元素），为根节点添加 RectTransform：
+ *      闲置对象 SetActive(false) 不渲染，无需挂在 Canvas 下；
+ *      取出时（onGet）通过 activeParent 移至正确的 Canvas 层级即可。
+ *   3. 若 prefab 是普通 Transform（3D 对象），根节点保持默认 Transform。
+ *
+ * 注意：poolRootParent 参数已废弃，此函数不再接受该参数。
+ */
+function createPoolRoot(poolName, prefab) {
+    const rootGo = new _CS.UnityEngine.GameObject(poolName);
+    // 必须为场景根级别对象才能调用 DontDestroyOnLoad
+    rootGo.transform.SetParent(null, false);
+    // 持久化到 DontDestroyOnLoad 场景，不受场景切换影响
+    _CS.UnityEngine.Object.DontDestroyOnLoad(rootGo);
+    // 检测 Prefab 是否为 UI 元素
+    let isUI = false;
+    try {
+        isUI = (prefab.GetComponent(_CS.UnityEngine.RectTransform) != null);
+    }
+    catch { /* ignore */ }
+    if (isUI) {
+        try {
+            if (rootGo.GetComponent(_CS.UnityEngine.RectTransform) == null) {
+                rootGo.AddComponent(_CS.UnityEngine.RectTransform);
+            }
+        }
+        catch {
+            // 某些 Unity 版本可能限制此操作，静默降级
+        }
+    }
+    return rootGo;
+}
+// ─── BaseGameObjectFactory ────────────────────────────────────────────────────
+/**
+ * GameObject 工厂基类，封装 onGet / onReturn / onDestroy / dispose 的通用实现。
+ * 子类只需实现 create()，并可按需覆盖 dispose() 追加资产释放逻辑。
+ *
+ * 生命周期（同时适用于 GameObjectFactory 与 ResGameObjectFactory）：
+ *   onGet()     → 从池根节点摘出，移至 activeParent（或场景根），SetActive(true)，对象进入场景
+ *   onReturn()  → SetActive(false)，归还至池根节点（DontDestroyOnLoad 场景）
+ *   onDestroy() → Object.Destroy(go)
+ *   dispose()   → Object.Destroy(poolRoot)   [子类可扩展]
+ *
+ * 防御性设计：
+ *   onReturn() 在归还前会校验池根节点是否仍然存活（isGoAlive）。
+ *   若外部意外 Destroy 了池根节点，onReturn() 会直接销毁该对象并抛出错误，
+ *   而非无声地将对象挂到一个已死亡的节点上。
+ *   子类的 create() 同样需要在 Instantiate 前校验池根节点。
+ */
+class BaseGameObjectFactory {
+    _poolRoot;
+    _poolName;
+    _activeParent;
+    /**
+     * @param poolName       对象池名称，用于命名池根节点及错误信息
+     * @param prefab         预制体，用于检测 RectTransform（UI 对象）
+     * @param poolRootParent 已弃用，不再影响池根节点位置（池根节点始终在 DontDestroyOnLoad）
+     * @param activeParent   get() 取出对象时的目标父节点；省略则置于场景根
+     */
+    constructor(poolName, prefab, poolRootParent, activeParent) {
+        this._poolName = poolName;
+        this._activeParent = activeParent;
+        // poolRootParent 已弃用：池根节点统一放在 DontDestroyOnLoad，忽略外部父节点参数
+        this._poolRoot = createPoolRoot(poolName, prefab);
+    }
+    onGet(go) {
+        // 从 DontDestroyOnLoad 场景摘出，移至当前场景中显示
+        if (this._activeParent != null) {
+            go.transform.SetParent(this._activeParent, false);
+        }
+        else {
+            go.transform.SetParent(null, true); // 置于场景根，保留世界坐标
+        }
+        go.SetActive(true);
+    }
+    onReturn(go) {
+        // 防御：若池根节点已被外部销毁，直接销毁对象，而非挂到死节点上
+        if (!isGoAlive(this._poolRoot)) {
+            safeDestroy(go);
+            throw new Error(`[PoolFactory] Pool root for "${this._poolName}" was destroyed externally. ` +
+                `The returned object has been destroyed. ` +
+                `Call PoolSystem.clearPool("${this._poolName}") to clean up this pool.`);
+        }
+        go.SetActive(false);
+        go.transform.SetParent(this._poolRoot.transform, false);
+    }
+    onDestroy(go) {
+        safeDestroy(go);
+    }
+    /** 销毁池根节点（ObjectPool.destroy() 自动调用，请勿手动调用） */
+    dispose() {
+        safeDestroy(this._poolRoot);
+    }
+}
+// ─── GameObjectFactory ────────────────────────────────────────────────────────
+/**
+ * Unity GameObject 对象池工厂（轻量版，不依赖 ResSystem）。
+ *
+ * 适用于已通过序列化字段或其他途径持有 Prefab 引用的场景。
+ * Prefab 资产的加载与卸载须由调用方自行管理。
+ *
+ * 若 Prefab 来自 Addressable，推荐改用 ResGameObjectFactory 或
+ * PoolSystem.createGoPoolAsync() 以统一管理资产生命周期。
+ *
+ * @param prefab          已加载的 Prefab GameObject
+ * @param poolName        对象池名称，用于命名池根节点
+ * @param poolRootParent  已弃用，传入值将被忽略（池根节点统一在 DontDestroyOnLoad）
+ * @param activeParent    get() 取出对象时的目标父节点；省略则置于场景根
+ */
+class GameObjectFactory extends BaseGameObjectFactory {
+    _prefab;
+    constructor(prefab, poolName, poolRootParent, activeParent) {
+        super(poolName, prefab, poolRootParent, activeParent);
+        this._prefab = prefab;
+    }
+    create() {
+        if (!isGoAlive(this._poolRoot)) {
+            throw new Error(`[GameObjectFactory] Pool root for "${this._poolName}" was destroyed externally. ` +
+                `Cannot create new instances. Call PoolSystem.clearPool("${this._poolName}") to clean up.`);
+        }
+        const go = _CS.UnityEngine.Object.Instantiate(this._prefab, this._poolRoot.transform);
+        go.SetActive(false);
+        return go;
+    }
+}
+exports.GameObjectFactory = GameObjectFactory;
+// ─── ResGameObjectFactory ─────────────────────────────────────────────────────
+/**
+ * 与 ResSystem 深度集成的 Unity GameObject 工厂（推荐用法）。
+ *
+ * 资产生命周期（由 ResSystem 统一托管）：
+ *   · 构造时接收 ResSystem 已加载的 IResHandle（引用计数 +1）
+ *   · create()    ← Object.Instantiate(handle.asset, poolRoot)，同步，池预热友好
+ *   · dispose()   ← handle.release()，通知 ResSystem 引用计数 -1；
+ *                   归零时 ResSystem 自动调用 Addressable.Release 卸载 Prefab
+ *
+ * 池根节点持久化：
+ *   池根节点通过 DontDestroyOnLoad 跨场景存活。
+ *   · UI 池：闲置对象（SetActive(false)）在 DontDestroyOnLoad 场景中不渲染，
+ *     无需挂在 Canvas 下；取出时（onGet）通过 activeParent 自动移到正确的 Canvas。
+ *   · 3D 池：同样驻留 DontDestroyOnLoad，取出时移至场景根或 activeParent。
+ *   poolRootParent 参数已弃用，传入值将被忽略。
+ *
+ * 推荐通过 PoolSystem.createGoPoolAsync() 使用，无需手动 loadAsync：
+ *   const pool = await poolSystem.createGoPoolAsync("Prefabs/Bullet", {
+ *     name: "BulletGO", initialCapacity: 20, maxCapacity: 60,
+ *   }, undefined, activeParent);
+ *
+ * @param handle          ResSystem.loadAsync() 返回的 Prefab 资产句柄
+ * @param poolName        对象池名称，用于命名池根节点
+ * @param poolRootParent  已弃用，传入值将被忽略（池根节点统一在 DontDestroyOnLoad）
+ * @param activeParent    get() 取出对象时的目标父节点；省略则置于场景根
+ */
+class ResGameObjectFactory extends BaseGameObjectFactory {
+    _handle;
+    constructor(handle, poolName, poolRootParent, activeParent) {
+        super(poolName, handle.asset, poolRootParent, activeParent);
+        this._handle = handle;
+    }
+    create() {
+        if (!isGoAlive(this._poolRoot)) {
+            throw new Error(`[ResGameObjectFactory] Pool root for "${this._poolName}" was destroyed externally. ` +
+                `Cannot create new instances. Call PoolSystem.clearPool("${this._poolName}") to clean up.`);
+        }
+        if (!this._handle.isLoaded) {
+            throw new Error("[ResGameObjectFactory] Prefab handle is not loaded or has been released. " +
+                "Ensure the pool is created after ResSystem.loadAsync() completes.");
+        }
+        const asset = this._handle.asset;
+        if (asset == null) {
+            throw new Error("[ResGameObjectFactory] handle.asset is null. Prefab not loaded.");
+        }
+        const go = _CS.UnityEngine.Object.Instantiate(asset, this._poolRoot.transform);
+        if (go == null) {
+            throw new Error("[ResGameObjectFactory] Object.Instantiate returned null.");
+        }
+        go.SetActive(false);
+        return go;
+    }
+    /**
+     * 释放 Prefab 资产句柄并销毁池根节点。
+     * 由 ObjectPool.destroy() 自动调用，请勿手动调用。
+     */
+    dispose() {
+        this._handle.release();
+        safeDestroy(this._poolRoot);
+    }
+}
+exports.ResGameObjectFactory = ResGameObjectFactory;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiUG9vbEZhY3Rvcmllcy5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1Bvb2xNb2R1bGUvUG9vbEZhY3Rvcmllcy50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQTZDRzs7O0FBS0gsNkNBQTZDO0FBQzdDLE1BQU0sR0FBRyxHQUFRLENBQUM7SUFDZCxJQUFJLENBQUM7UUFDRCxPQUFPLE9BQU8sQ0FBQyxRQUFRLENBQUMsQ0FBQztJQUM3QixDQUFDO0lBQUMsTUFBTSxDQUFDO1FBQ0wsT0FBTyxPQUFPLFVBQVUsS0FBSyxXQUFXLENBQUMsQ0FBQyxDQUFFLFVBQWtCLENBQUMsRUFBRSxDQUFDLENBQUMsQ0FBQyxTQUFTLENBQUM7SUFDbEYsQ0FBQztBQUNMLENBQUMsQ0FBQyxFQUFFLENBQUM7QUFDTCxJQUFJLE9BQU8sR0FBRyxLQUFLLFdBQVcsRUFBRSxDQUFDO0lBQzdCLE1BQU0sSUFBSSxLQUFLLENBQUMsbUZBQW1GLENBQUMsQ0FBQztBQUN6RyxDQUFDO0FBU0QsaUZBQWlGO0FBRWpGOzs7R0FHRztBQUNILE1BQWEsYUFBYTtJQUVMLEtBQUssQ0FBYztJQUVwQyxZQUFZLElBQWlCO1FBQ3pCLElBQUksQ0FBQyxLQUFLLEdBQUcsSUFBSSxDQUFDO0lBQ3RCLENBQUM7SUFFRCxNQUFNLEtBQXNCLE9BQU8sSUFBSSxJQUFJLENBQUMsS0FBSyxFQUFFLENBQUMsQ0FBQyxDQUFDO0lBQ3RELEtBQUssQ0FBQyxLQUFRLElBQWEsQ0FBQztJQUM1QixRQUFRLENBQUMsS0FBUSxJQUFVLENBQUM7SUFDNUIsU0FBUyxDQUFDLEtBQVEsSUFBUyxDQUFDO0NBQy9CO0FBWkQsc0NBWUM7QUFFRCxpRkFBaUY7QUFFakY7OztHQUdHO0FBQ0gsTUFBYSxpQkFBaUI7SUFFVCxLQUFLLENBQWM7SUFFcEMs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

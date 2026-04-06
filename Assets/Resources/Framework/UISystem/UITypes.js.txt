@@ -1,0 +1,45 @@
+"use strict";
+/**
+ * UITypes — UI 系统全局类型定义
+ *
+ * 设计原则：
+ *   - 仅包含接口、枚举与常量，不含任何实现逻辑
+ *   - 所有 UI 子模块（ViewBase / ModelBase / ServiceBase / UIComponent / UISystem）
+ *     均依赖此文件的接口编程，实现之间无直接耦合
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UIOpenFailReason = exports.UIOpenMode = exports.UILayer = void 0;
+// ─── UI 层级 ───────────────────────────────────────────────────────────────────
+/**
+ * UI 层级枚举，与 C# UILayer 枚举值保持严格对应（整数 0-4）。
+ * 层级越高，视觉上越靠前，并通过 Blocker 屏蔽下层输入。
+ */
+exports.UILayer = {
+    Bottom: 0, // 底层 —— 地图、背景 HUD
+    Normal: 1, // 普通层 —— 主界面、功能界面
+    Queue: 2, // 队列层 —— 公告、通知
+    Pop: 3, // 弹窗层 —— 对话框、确认框
+    Top: 4, // 顶层 —— 全局 Loading、错误提示
+};
+// ─── 打开模式 ──────────────────────────────────────────────────────────────────
+/**
+ * UI 打开模式，在 ViewBase.onOpen() 中作为参数传入，
+ * 供业务代码区分"首次打开/重建"与"从缓存恢复"两种场景。
+ */
+exports.UIOpenMode = {
+    /** 首次打开，或缓存超时销毁后重新打开 */
+    Fresh: "fresh",
+    /** 从隐藏的缓存中恢复（MVC 状态保留，只需刷新显示数据） */
+    FromCache: "fromCache",
+};
+// ─── 打开失败原因 ──────────────────────────────────────────────────────────────
+/**
+ * UI 打开失败原因枚举。
+ *   PreloadFailed  — onPreload() 抛出了异常（网络错误、超时等）
+ *   PreloadAborted — onPreload() 返回了 false（业务层主动中止）
+ */
+exports.UIOpenFailReason = {
+    PreloadFailed: "preloadFailed",
+    PreloadAborted: "preloadAborted",
+};
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVUlUeXBlcy5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvRnJhbWV3b3JrL1VJU3lzdGVtL1VJVHlwZXMudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7O0dBT0c7OztBQUlILGdGQUFnRjtBQUVoRjs7O0dBR0c7QUFDVSxRQUFBLE9BQU8sR0FBRztJQUNuQixNQUFNLEVBQUcsQ0FBQyxFQUFJLGtCQUFrQjtJQUNoQyxNQUFNLEVBQUcsQ0FBQyxFQUFJLGtCQUFrQjtJQUNoQyxLQUFLLEVBQUksQ0FBQyxFQUFJLGVBQWU7SUFDN0IsR0FBRyxFQUFNLENBQUMsRUFBSSxpQkFBaUI7SUFDL0IsR0FBRyxFQUFNLENBQUMsRUFBSSx3QkFBd0I7Q0FDaEMsQ0FBQztBQUdYLDhFQUE4RTtBQUU5RTs7O0dBR0c7QUFDVSxRQUFBLFVBQVUsR0FBRztJQUN0Qix3QkFBd0I7SUFDeEIsS0FBSyxFQUFPLE9BQU87SUFDbkIsbUNBQW1DO0lBQ25DLFNBQVMsRUFBRyxXQUFXO0NBQ2pCLENBQUM7QUEwQ1gsNEVBQTRFO0FBRTVFOzs7O0dBSUc7QUFDVSxRQUFBLGdCQUFnQixHQUFHO0lBQzVCLGFBQWEsRUFBSSxlQUFlO0lBQ2hDLGNBQWMsRUFBRyxnQkFBZ0I7Q0FDM0IsQ0FBQyJ9

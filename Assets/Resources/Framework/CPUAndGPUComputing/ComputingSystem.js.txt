@@ -1,0 +1,95 @@
+"use strict";
+/**
+ * ComputingSystem — CPU / GPU 压力检测模块
+ *
+ * 职责：
+ *   - 每帧采样当前的 CPU 帧耗时、平均 FPS、托管内存占用
+ *   - 每帧采样 GPU 帧耗时（依赖 FrameTimingManager，不支持时静默降级）
+ *   - 对外提供 ICpuStats / IGpuStats 快照及 0–1 负载比例
+ *
+ * 使用约定：
+ *   1. 负载 > 1 表示当帧超出目标帧时间预算（掉帧风险）
+ *   2. GPU 耗时在不支持的平台上返回 -1，gpuLoad 为 0
+ *   3. 通过 setTargetFps() 可动态调整参考帧率（默认跟随 Application.targetFrameRate）
+ *
+ * 注册示例（src/index.cts）：
+ *   framework.registerModule(new ComputingSystem());
+ *
+ * 获取示例：
+ *   const cs = framework.getModule<IComputingSystem>("ComputingSystem");
+ *   console.log(cs.cpuLoad, cs.gpuLoad);
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ComputingSystem = void 0;
+const CpuComputing_1 = require("./CpuComputing");
+const GupComputing_1 = require("./GupComputing");
+// ─── ComputingSystem ──────────────────────────────────────────────────────────
+class ComputingSystem {
+    moduleName = "ComputingSystem";
+    _cpu = new CpuComputing_1.CpuSampler(60);
+    _gpu = new GupComputing_1.GpuSampler();
+    _targetFps = 60;
+    _cpuStats = ComputingSystem._zeroCpuStats();
+    _gpuStats = { gpuFrameTimeMs: -1, gpuLoad: 0 };
+    _log;
+    // ── IModule 生命周期 ──────────────────────────────────────────────────────
+    onInit(fw) {
+        const logSys = fw.tryGetModule("LogSystem");
+        this._log = logSys?.registerChannel("computing", "ComputingSystem");
+        // 读取项目目标帧率作为初始基准，若为 -1（不限帧）则默认 60
+        try {
+            const appTarget = CS.UnityEngine.Application.targetFrameRate;
+            this._targetFps = appTarget > 0 ? appTarget : 60;
+        }
+        catch {
+            this._targetFps = 60;
+        }
+        this._log?.info(`ComputingSystem initialized. targetFps=${this._targetFps}`);
+    }
+    onUpdate(deltaTime) {
+        this._cpu.update(deltaTime);
+        this._gpu.update();
+        const targetMs = 1000 / this._targetFps;
+        this._cpuStats = this._cpu.getSnapshot(targetMs);
+        this._gpuStats = this._gpu.getSnapshot(targetMs);
+    }
+    onShutdown() {
+        this._cpu.reset();
+        this._gpu.reset();
+        this._log?.info("ComputingSystem shutdown.");
+    }
+    // ── IComputingSystem ──────────────────────────────────────────────────────
+    get cpuStats() { return this._cpuStats; }
+    get gpuStats() { return this._gpuStats; }
+    get cpuLoad() { return this._cpuStats.cpuLoad; }
+    get gpuLoad() { return this._gpuStats.gpuLoad; }
+    get targetFps() { return this._targetFps; }
+    /**
+     * 设置目标帧率基准。
+     * fps ≤ 0 时重新读取 Application.targetFrameRate（仍为 -1/0 则保持 60）。
+     */
+    setTargetFps(fps) {
+        if (fps <= 0) {
+            try {
+                const appTarget = CS.UnityEngine.Application.targetFrameRate;
+                this._targetFps = appTarget > 0 ? appTarget : 60;
+            }
+            catch {
+                this._targetFps = 60;
+            }
+        }
+        else {
+            this._targetFps = fps;
+        }
+        this._log?.info(`targetFps updated to ${this._targetFps}`);
+    }
+    // ── 私有辅助 ──────────────────────────────────────────────────────────────
+    static _zeroCpuStats() {
+        return {
+            frameTimeMs: 0, fps: 0, avgFps: 0,
+            allocatedMemoryMB: 0, reservedMemoryMB: 0, cpuLoad: 0,
+        };
+    }
+}
+exports.ComputingSystem = ComputingSystem;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiQ29tcHV0aW5nU3lzdGVtLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vVHNQcm9qZWN0X1REL3NyYy9GcmFtZXdvcmsvQ1BVQW5kR1BVQ29tcHV0aW5nL0NvbXB1dGluZ1N5c3RlbS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7R0FtQkc7OztBQVFILGlEQUE0QztBQUM1QyxpREFBNEM7QUFFNUMsaUZBQWlGO0FBRWpGLE1BQWEsZUFBZTtJQUVmLFVBQVUsR0FBRyxpQkFBaUIsQ0FBQztJQUV2QixJQUFJLEdBQWUsSUFBSSx5QkFBVSxDQUFDLEVBQUUsQ0FBQyxDQUFDO0lBQ3RDLElBQUksR0FBZSxJQUFJLHlCQUFVLEVBQUUsQ0FBQztJQUU3QyxVQUFVLEdBQWEsRUFBRSxDQUFDO0lBQzFCLFNBQVMsR0FBYyxlQUFlLENBQUMsYUFBYSxFQUFFLENBQUM7SUFDdkQsU0FBUyxHQUFjLEVBQUUsY0FBYyxFQUFFLENBQUMsQ0FBQyxFQUFFLE9BQU8sRUFBRSxDQUFDLEVBQUUsQ0FBQztJQUMxRCxJQUFJLENBQXFCO0lBRWpDLHlFQUF5RTtJQUV6RSxNQUFNLENBQUMsRUFBaUI7UUFDcEIsTUFBTSxNQUFNLEdBQUcsRUFBRSxDQUFDLFlBQVksQ0FBWSxXQUFXLENBQUMsQ0FBQztRQUN2RCxJQUFJLENBQUMsSUFBSSxHQUFHLE1BQU0sRUFBRSxlQUFlLENBQUMsV0FBVyxFQUFFLGlCQUFpQixDQUFDLENBQUM7UUFFcEUsa0NBQWtDO1FBQ2xDLElBQUksQ0FBQztZQUNELE1BQU0sU0FBUyxHQUFXLEVBQUUsQ0FBQyxXQUFXLENBQUMsV0FBVyxDQUFDLGVBQWUsQ0FBQztZQUNyRSxJQUFJLENBQUMsVUFBVSxHQUFHLFNBQVMsR0FBRyxDQUFDLENBQUMsQ0FBQyxDQUFDLFNBQVMsQ0FBQyxDQUFDLENBQUMsRUFBRSxDQUFDO1FBQ3JELENBQUM7UUFBQyxNQUFNLENBQUM7WUFDTCxJQUFJLENB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

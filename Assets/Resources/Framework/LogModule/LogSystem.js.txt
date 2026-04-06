@@ -1,0 +1,141 @@
+"use strict";
+/**
+ * LogSystem — 日志系统核心
+ *
+ * 职责：管理日志等级开关与自定义通道的生命周期，执行两层过滤后输出到控制台。
+ *
+ * 两层过滤机制（任一命中则静默丢弃该条日志）：
+ *   1. 等级过滤 — disableLevel(LogLevel.Info) 后，所有通道的 Info 打印均静默
+ *   2. 通道过滤 — disableChannel("network") 后，该通道的所有打印均静默
+ *
+ * 默认通道：
+ *   系统初始化后自动注册 id 为 "default" 的通道，
+ *   直接调用 log.info() / log.warn() 等方法时走此通道。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.LogSystem = void 0;
+const LogChannelHandle_1 = require("./LogChannelHandle");
+const LEVEL_META = {
+    debug: { tag: "[DEBUG]", color: "#B8B8B8" }, // 灰白
+    info: { tag: "[INFO] ", color: "#57E87A" }, // 绿色
+    warn: { tag: "[WARN] ", color: "#FFD060" }, // 黄色
+    error: { tag: "[ERROR]", color: "#FF5555" }, // 红色
+};
+// ─── LogSystem ─────────────────────────────────────────────────────────────────
+class LogSystem {
+    moduleName = "LogSystem";
+    /** 默认通道 ID，直接调用 debug/info/warn/error 时使用 */
+    static DEFAULT_CHANNEL = "default";
+    _disabledLevels = new Set();
+    _channels = new Map();
+    // ── IModule 生命周期 ──────────────────────────────────────────────────────
+    onInit(_fw) {
+        this.registerChannel(LogSystem.DEFAULT_CHANNEL, "Default");
+    }
+    onShutdown() {
+        this._channels.clear();
+        this._disabledLevels.clear();
+    }
+    // ── ILogSystem — 等级开关 ─────────────────────────────────────────────────
+    enableLevel(level) {
+        this._disabledLevels.delete(level);
+    }
+    disableLevel(level) {
+        this._disabledLevels.add(level);
+    }
+    isLevelEnabled(level) {
+        return !this._disabledLevels.has(level);
+    }
+    // ── ILogSystem — 通道管理 ─────────────────────────────────────────────────
+    registerChannel(id, name) {
+        const existing = this._channels.get(id);
+        if (existing)
+            return existing.handle;
+        const channelName = name ?? id;
+        const handle = new LogChannelHandle_1.LogChannelHandle(this, id, channelName);
+        this._channels.set(id, { enabled: true, handle });
+        return handle;
+    }
+    enableChannel(id) {
+        const entry = this._channels.get(id);
+        if (entry)
+            entry.enabled = true;
+        // 若 id 不存在则静默忽略
+    }
+    disableChannel(id) {
+        const entry = this._channels.get(id);
+        if (entry)
+            entry.enabled = false;
+        // 若 id 不存在则静默忽略
+    }
+    hasChannel(id) {
+        return this._channels.has(id);
+    }
+    getChannel(id) {
+        return this._channels.get(id)?.handle;
+    }
+    // ── ILogSystem — 全局快捷打印（走默认通道） ───────────────────────────────
+    debug(message, ...args) {
+        this.dispatchLog(LogSystem.DEFAULT_CHANNEL, "debug", message, args);
+    }
+    info(message, ...args) {
+        this.dispatchLog(LogSystem.DEFAULT_CHANNEL, "info", message, args);
+    }
+    warn(message, ...args) {
+        this.dispatchLog(LogSystem.DEFAULT_CHANNEL, "warn", message, args);
+    }
+    error(message, ...args) {
+        this.dispatchLog(LogSystem.DEFAULT_CHANNEL, "error", message, args);
+    }
+    // ── ILogDispatcher（供 LogChannelHandle 回调） ────────────────────────────
+    dispatchLog(channelId, level, message, args) {
+        // 第一层：等级过滤
+        if (this._disabledLevels.has(level))
+            return;
+        // 第二层：通道过滤
+        const entry = this._channels.get(channelId);
+        if (!entry || !entry.enabled)
+            return;
+        const meta = LEVEL_META[level];
+        const prefix = `[${entry.handle.name}]${meta.tag} `;
+        this._output(level, meta.color, prefix, message, args);
+    }
+    setChannelEnabled(channelId, enabled) {
+        const entry = this._channels.get(channelId);
+        if (entry)
+            entry.enabled = enabled;
+    }
+    isChannelEnabled(channelId) {
+        return this._channels.get(channelId)?.enabled ?? false;
+    }
+    // ── 私有辅助 ──────────────────────────────────────────────────────────────
+    _output(level, color, prefix, message, args) {
+        const body = args.length > 0
+            ? `${message} ${args.map(a => {
+                if (typeof a !== "object" || a === null)
+                    return String(a);
+                try {
+                    return JSON.stringify(a);
+                }
+                catch {
+                    return String(a);
+                }
+            }).join(" ")}`
+            : message;
+        // 用 Unity 富文本标签对整条日志着色
+        const colored = `<color=${color}>${prefix}${body}</color>`;
+        switch (level) {
+            case "warn":
+                console.warn(colored);
+                break;
+            case "error":
+                console.error(colored);
+                break;
+            default:
+                console.log(colored);
+                break;
+        }
+    }
+}
+exports.LogSystem = LogSystem;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiTG9nU3lzdGVtLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vVHNQcm9qZWN0X1REL3NyYy9GcmFtZXdvcmsvTG9nTW9kdWxlL0xvZ1N5c3RlbS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7OztHQVlHOzs7QUFLSCx5REFBc0Q7QUFrQnRELE1BQU0sVUFBVSxHQUEwQztJQUN0RCxLQUFLLEVBQUUsRUFBRSxHQUFHLEVBQUUsU0FBUyxFQUFFLEtBQUssRUFBRSxTQUFTLEVBQUUsRUFBSSxLQUFLO0lBQ3BELElBQUksRUFBRyxFQUFFLEdBQUcsRUFBRSxTQUFTLEVBQUUsS0FBSyxFQUFFLFNBQVMsRUFBRSxFQUFJLEtBQUs7SUFDcEQsSUFBSSxFQUFHLEVBQUUsR0FBRyxFQUFFLFNBQVMsRUFBRSxLQUFLLEVBQUUsU0FBUyxFQUFFLEVBQUksS0FBSztJQUNwRCxLQUFLLEVBQUUsRUFBRSxHQUFHLEVBQUUsU0FBUyxFQUFFLEtBQUssRUFBRSxTQUFTLEVBQUUsRUFBSSxLQUFLO0NBQ3ZELENBQUM7QUFFRixrRkFBa0Y7QUFFbEYsTUFBYSxTQUFTO0lBRVQsVUFBVSxHQUFHLFdBQVcsQ0FBQztJQUVsQyw2Q0FBNkM7SUFDN0MsTUFBTSxDQUFVLGVBQWUsR0FBRyxTQUFTLENBQUM7SUFFM0IsZUFBZSxHQUFHLElBQUksR0FBRyxFQUFZLENBQUM7SUFDdEMsU0FBUyxHQUFTLElBQUksR0FBRyxFQUF3QixDQUFDO0lBRW5FLHlFQUF5RTtJQUV6RSxNQUFNLENBQUMsR0FBa0I7UUFDckIsSUFBSSxDQUFDLGVBQWUsQ0FBQyxTQUFTLENBQUMsZUFBZSxFQUFFLFNBQVMsQ0FBQyxDQUFDO0lBQy9ELENBQUM7SUFFRCxVQUFVO1FBQ04sSUFBSSxDQUFDLFNBQVMsQ0FBQyxLQUFLLEVBQUUsQ0FBQztRQUN2QixJQUFJLENBQUMsZUFBZSxDQUFDLEtBQUssRUFBRSxDQUFDO0lBQ2pDLENBQUM7SUFFRCx5RUFBeUU7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

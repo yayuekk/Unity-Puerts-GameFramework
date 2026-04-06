@@ -1,0 +1,40 @@
+"use strict";
+/**
+ * UISystem 模块公共出口
+ *
+ * 推荐通过此文件统一导入，避免直接依赖各子文件路径。
+ *
+ * 使用示例：
+ *   import {
+ *     UIClass, UISystem,
+ *     ViewBase, ModelBase, ServiceBase,
+ *     UIComponent, UIDataReader,
+ *     UILayer, UIOpenMode,
+ *   } from "../Framework/UISystem";
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UIOpenFailReason = exports.UIOpenMode = exports.UILayer = exports.UIDataReader = exports.UIComponent = exports.ServiceBase = exports.ModelBase = exports.ViewBase = exports.UINodeBase = exports.UIStage = exports.getUIClassCtor = exports.UIClass = exports.UISystem = void 0;
+var UISystem_1 = require("./UISystem");
+Object.defineProperty(exports, "UISystem", { enumerable: true, get: function () { return UISystem_1.UISystem; } });
+var UIClassRegistry_1 = require("./UIClassRegistry");
+Object.defineProperty(exports, "UIClass", { enumerable: true, get: function () { return UIClassRegistry_1.UIClass; } });
+Object.defineProperty(exports, "getUIClassCtor", { enumerable: true, get: function () { return UIClassRegistry_1.getUIClassCtor; } });
+var UIStage_1 = require("./UIStage");
+Object.defineProperty(exports, "UIStage", { enumerable: true, get: function () { return UIStage_1.UIStage; } });
+var UINodeBase_1 = require("./UINodeBase");
+Object.defineProperty(exports, "UINodeBase", { enumerable: true, get: function () { return UINodeBase_1.UINodeBase; } });
+var ViewBase_1 = require("./ViewBase");
+Object.defineProperty(exports, "ViewBase", { enumerable: true, get: function () { return ViewBase_1.ViewBase; } });
+var ModelBase_1 = require("./ModelBase");
+Object.defineProperty(exports, "ModelBase", { enumerable: true, get: function () { return ModelBase_1.ModelBase; } });
+var ServiceBase_1 = require("./ServiceBase");
+Object.defineProperty(exports, "ServiceBase", { enumerable: true, get: function () { return ServiceBase_1.ServiceBase; } });
+var UIComponent_1 = require("./UIComponent");
+Object.defineProperty(exports, "UIComponent", { enumerable: true, get: function () { return UIComponent_1.UIComponent; } });
+var UIDataReader_1 = require("./UIDataReader");
+Object.defineProperty(exports, "UIDataReader", { enumerable: true, get: function () { return UIDataReader_1.UIDataReader; } });
+var UITypes_1 = require("./UITypes");
+Object.defineProperty(exports, "UILayer", { enumerable: true, get: function () { return UITypes_1.UILayer; } });
+Object.defineProperty(exports, "UIOpenMode", { enumerable: true, get: function () { return UITypes_1.UIOpenMode; } });
+Object.defineProperty(exports, "UIOpenFailReason", { enumerable: true, get: function () { return UITypes_1.UIOpenFailReason; } });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9VSVN5c3RlbS9pbmRleC50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7OztHQVlHOzs7QUFFSCx1Q0FBeUQ7QUFBaEQsb0dBQUEsUUFBUSxPQUFBO0FBQ2pCLHFEQUFnRTtBQUF2RCwwR0FBQSxPQUFPLE9BQUE7QUFBRSxpSEFBQSxjQUFjLE9BQUE7QUFDaEMscUNBQXdEO0FBQS9DLGtHQUFBLE9BQU8sT0FBQTtBQUNoQiwyQ0FBMkQ7QUFBbEQsd0dBQUEsVUFBVSxPQUFBO0FBQ25CLHVDQUF5RDtBQUFoRCxvR0FBQSxRQUFRLE9BQUE7QUFDakIseUNBQTBEO0FBQWpELHNHQUFBLFNBQVMsT0FBQTtBQUNsQiw2Q0FBNEQ7QUFBbkQsMEdBQUEsV0FBVyxPQUFBO0FBQ3BCLDZDQUE0RDtBQUFuRCwwR0FBQSxXQUFXLE9BQUE7QUFDcEIsK0NBQTZEO0FBQXBELDRHQUFBLFlBQVksT0FBQTtBQUVyQixxQ0FJbUI7QUFIZixrR0FBQSxPQUFPLE9BQUE7QUFDUCxxR0FBQSxVQUFVLE9BQUE7QUFDViwyR0FBQSxnQkFBZ0IsT0FBQSJ9

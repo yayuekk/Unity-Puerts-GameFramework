@@ -1,0 +1,94 @@
+"use strict";
+/**
+ * SceneTransition — 场景过渡策略实现
+ *
+ * 采用策略模式（Strategy Pattern）将过渡动画与场景加载逻辑解耦。
+ * 框架提供两个内置实现，业务层可自行继承 SceneTransitionBase 实现任意效果。
+ *
+ * 内置实现：
+ *   - NullSceneTransition    无过渡，立即切换（默认，适合开发调试）
+ *   - DelaySceneTransition   延迟过渡，适合简单的时序控制（单元测试 / 简单切换）
+ *
+ * 业务层扩展示例（淡入淡出）：
+ *   ```typescript
+ *   class FadeTransition extends SceneTransitionBase {
+ *       async onBeforeLoad() { await UISystem.openUI("LoadingScreen"); }
+ *       async onAfterLoad()  { await UISystem.closeUI("LoadingScreen"); }
+ *   }
+ *   ```
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DelaySceneTransition = exports.NullSceneTransition = exports.SceneTransitionBase = void 0;
+// ─── SceneTransitionBase ──────────────────────────────────────────────────────
+/**
+ * 场景过渡策略抽象基类。
+ *
+ * 提供空实现作为默认行为，子类只需重写需要的钩子。
+ * 两个方法均返回 Promise，支持任意异步操作（动画、UI 等）。
+ */
+class SceneTransitionBase {
+    async onBeforeLoad() { }
+    async onAfterLoad() { }
+}
+exports.SceneTransitionBase = SceneTransitionBase;
+// ─── NullSceneTransition ──────────────────────────────────────────────────────
+/**
+ * 空过渡（默认策略）。
+ *
+ * onBeforeLoad / onAfterLoad 均立即 resolve，场景瞬间切换。
+ * 适用于：
+ *   - 开发阶段快速调试
+ *   - 不需要过渡动画的内部场景切换
+ */
+class NullSceneTransition extends SceneTransitionBase {
+    static _instance = null;
+    /** 全局共享的空过渡实例，无需每次 new */
+    static get shared() {
+        if (!NullSceneTransition._instance) {
+            NullSceneTransition._instance = new NullSceneTransition();
+        }
+        return NullSceneTransition._instance;
+    }
+}
+exports.NullSceneTransition = NullSceneTransition;
+// ─── DelaySceneTransition ─────────────────────────────────────────────────────
+/**
+ * 延迟过渡策略（用于测试 / 简单淡出淡入效果的时序模拟）。
+ *
+ * 在 onBeforeLoad / onAfterLoad 各等待指定毫秒数后 resolve。
+ *
+ * @example
+ * ```typescript
+ * sceneSystem.loadScene("Level_01", {
+ *     transition: new DelaySceneTransition(300, 500),
+ * });
+ * ```
+ */
+class DelaySceneTransition extends SceneTransitionBase {
+    _beforeMs;
+    _afterMs;
+    /**
+     * @param beforeMs 加载前等待毫秒数（默认 0）
+     * @param afterMs  加载后等待毫秒数（默认 0）
+     */
+    constructor(beforeMs = 0, afterMs = 0) {
+        super();
+        this._beforeMs = beforeMs;
+        this._afterMs = afterMs;
+    }
+    async onBeforeLoad() {
+        if (this._beforeMs > 0) {
+            await this._delay(this._beforeMs);
+        }
+    }
+    async onAfterLoad() {
+        if (this._afterMs > 0) {
+            await this._delay(this._afterMs);
+        }
+    }
+    _delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}
+exports.DelaySceneTransition = DelaySceneTransition;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU2NlbmVUcmFuc2l0aW9uLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vVHNQcm9qZWN0X1REL3NyYy9GcmFtZXdvcmsvU2NlbmVTeXN0ZW0vU2NlbmVUcmFuc2l0aW9uLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7Ozs7R0FpQkc7OztBQUlILGlGQUFpRjtBQUVqRjs7Ozs7R0FLRztBQUNILE1BQXNCLG1CQUFtQjtJQUNyQyxLQUFLLENBQUMsWUFBWSxLQUFtQixDQUFDO0lBQ3RDLEtBQUssQ0FBQyxXQUFXLEtBQW9CLENBQUM7Q0FDekM7QUFIRCxrREFHQztBQUVELGlGQUFpRjtBQUVqRjs7Ozs7OztHQU9HO0FBQ0gsTUFBYSxtQkFBb0IsU0FBUSxtQkFBbUI7SUFDaEQsTUFBTSxDQUFDLFNBQVMsR0FBK0IsSUFBSSxDQUFDO0lBRTVELDBCQUEwQjtJQUMxQixNQUFNLEtBQUssTUFBTTtRQUNiLElBQUksQ0FBQyxtQkFBbUIsQ0FBQyxTQUFTLEVBQUUsQ0FBQztZQUNqQyxtQkFBbUIsQ0FBQyxTQUFTLEdBQUcsSUFBSSxtQkFBbUIsRUFBRSxDQUFDO1FBQzlELENBQUM7UUFDRCxPQUFPLG1CQUFtQixDQUFDLFNBQVMsQ0FBQztJQUN6QyxDQUFDOztBQVRMLGtEQVVDO0FBRUQsaUZBQWlGO0FBRWpGOzs7Ozs7Ozs7OztHQVdHO0FBQ0gsTUFBYSxvQkFBcUIsU0FBUSxtQkFBbUI7SUFDeEMsU0FBUyxDQUFTO0lBQ2xCLFFBQVEsQ0FBVTtJQUVuQzs7O09BR0c7SUFDSCxZQUFZLFdBQW1CLENBQUMsRUFBRSxVQUFrQixDQUFDO1FBQ2pELEtBQUssRUFBRSxDQUFDO1FBQ1IsSUFBSSxDQUFDLFNBQVMsR0FBRyxRQUFRLENBQUM7UUFDMUIsSUFBSSxDQUFDLFFBQVEsR0FBSSxPQUFPLENBQUM7SUFDN0IsQ0FBQztJQUVELEtBQUssQ0FBQyxZQUFZO1FBQ2QsSUFBSSxJQUFJLENBQUMsU0FBUyxHQUFHLENBQUMsRUFBRSxDQUFDO1lBQ3JCLE1BQU0sSUFBSSxDQUFDLE1BQU0sQ0FBQyxJQUFJLENBQUMsU0FBUyxDQUFDLENBQUM7UUFDdEMsQ0FBQztJQUNMLENBQUM7SUFFRCxLQUFLLENBQUMsV0FBVztRQUNiLElBQUksSUFBSSxDQUFDLFFBQVEsR0FBRyxDQUFDLEVBQUUsQ0FBQztZQUNwQixNQUFNLElBQUksQ0FBQyxNQUFNLENBQUMsSUFBSSxDQUFDLFFBQVEsQ0FBQyxDQUFDO1FBQ3JDLENBQUM7SUFDTCxDQUFDO0lBRU8sTUFBTSxDQUFDLEVBQVU7UUFDckIsT0FBTyxJQUFJLE9BQU8sQ0FBQyxPQUFPLENBQUMsRUFBRSxDQUFDLFVBQVUsQ0FBQyxPQUFPLEVBQUUsRUFBRSxDQUFDLENBQUMsQ0FBQztJQUMzRCxDQUFDO0NBQ0o7QUE3QkQsb0RBNkJDIn0=

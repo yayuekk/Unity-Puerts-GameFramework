@@ -1,0 +1,150 @@
+"use strict";
+/**
+ * TimerSystem — 计时器系统核心
+ *
+ * 职责：管理所有计时器条目的生命周期（添加、更新、移除）。
+ * 策略分发、句柄创建等职责已拆分至独立文件，本文件只关注调度逻辑。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TimerSystem = void 0;
+const TimerTypes_1 = require("./TimerTypes");
+const TickStrategy_1 = require("./TickStrategy");
+const TimerHandle_1 = require("./TimerHandle");
+class TimerSystem {
+    moduleName = "TimerSystem";
+    _timers = new Map();
+    /** tick 过程中标记待删除的 ID，tick 结束后统一清除（Mark-Sweep） */
+    _pendingRemove = [];
+    /** tick 开始时快照当前所有 ID，防止同帧新增的计时器被立即 tick */
+    _tickIds = [];
+    _nextId = 1;
+    _activeCount = 0;
+    _ticking = false;
+    // ── IModule 生命周期 ──────────────────────────────────────────────────────
+    onInit(_fw) { }
+    onUpdate(deltaTime) {
+        this._ticking = true;
+        // 先快照 ID 列表，防止回调中新增的计时器在同一帧被 tick
+        for (const id of this._timers.keys())
+            this._tickIds.push(id);
+        for (const id of this._tickIds) {
+            const entry = this._timers.get(id);
+            if (!entry || entry.paused || entry.pendingRemove)
+                continue;
+            const strategy = (0, TickStrategy_1.getStrategy)(entry.type);
+            if (!strategy.tick(entry, deltaTime))
+                continue;
+            this._fire(entry, strategy);
+        }
+        this._tickIds.length = 0;
+        this._ticking = false;
+        this._sweep();
+    }
+    onShutdown() {
+        this.clearAll();
+    }
+    // ── ITimerSystem 公开 API ─────────────────────────────────────────────────
+    addFrameTimer(interval, callback, repeat = 1) {
+        return this._add(TimerTypes_1.TimerType.Frame, Math.max(1, Math.floor(interval)), callback, repeat);
+    }
+    addSecondTimer(interval, callback, repeat = 1) {
+        return this._add(TimerTypes_1.TimerType.Second, Math.max(0.001, interval), callback, repeat);
+    }
+    addMinuteTimer(interval, callback, repeat = 1) {
+        return this._add(TimerTypes_1.TimerType.Minute, Math.max(0.001, interval) * 60, callback, repeat);
+    }
+    removeTimer(id) {
+        const entry = this._timers.get(id);
+        if (!entry || entry.pendingRemove)
+            return false;
+        this._markRemove(entry);
+        if (!this._ticking)
+            this._sweep();
+        return true;
+    }
+    pauseTimer(id) {
+        const entry = this._timers.get(id);
+        if (entry && !entry.pendingRemove)
+            entry.paused = true;
+    }
+    resumeTimer(id) {
+        const entry = this._timers.get(id);
+        if (entry && !entry.pendingRemove)
+            entry.paused = false;
+    }
+    resetTimer(id) {
+        const entry = this._timers.get(id);
+        if (entry && !entry.pendingRemove)
+            entry.elapsed = 0;
+    }
+    clearAll() {
+        this._timers.clear();
+        this._pendingRemove.length = 0;
+        this._activeCount = 0;
+    }
+    get activeCount() {
+        return this._activeCount;
+    }
+    // ── ITimerController（供 TimerHandle 回调）────────────────────────────────
+    isTimerActive(id) {
+        const entry = this._timers.get(id);
+        return entry != null && !entry.pendingRemove;
+    }
+    isTimerPaused(id) {
+        return this._timers.get(id)?.paused ?? false;
+    }
+    // ── 私有辅助 ──────────────────────────────────────────────────────────────
+    _add(type, interval, callback, repeat) {
+        const id = this._nextId++;
+        const entry = {
+            id, type, interval,
+            elapsed: 0,
+            remaining: repeat <= 0 ? -1 : repeat,
+            callback,
+            paused: false,
+            pendingRemove: false,
+        };
+        this._timers.set(id, entry);
+        this._activeCount++;
+        return new TimerHandle_1.TimerHandle(this, id);
+    }
+    _fire(entry, strategy) {
+        try {
+            entry.callback();
+        }
+        catch (err) {
+            console.error(`[TimerSystem] Uncaught error in timer #${entry.id}:`, err);
+        }
+        // 回调可能调用 cancel()（pendingRemove=true）或 clearAll()（entry 已从 map 中移除），
+        // 两者都意味着本计时器不应继续处理生命周期逻辑
+        if (entry.pendingRemove || !this._timers.has(entry.id))
+            return;
+        if (entry.remaining === -1) {
+            strategy.afterFire(entry);
+        }
+        else {
+            entry.remaining--;
+            if (entry.remaining <= 0) {
+                this._markRemove(entry);
+            }
+            else {
+                strategy.afterFire(entry);
+            }
+        }
+    }
+    _markRemove(entry) {
+        if (entry.pendingRemove)
+            return;
+        entry.pendingRemove = true;
+        this._pendingRemove.push(entry.id);
+        this._activeCount--;
+    }
+    _sweep() {
+        for (const id of this._pendingRemove) {
+            this._timers.delete(id);
+        }
+        this._pendingRemove.length = 0;
+    }
+}
+exports.TimerSystem = TimerSystem;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVGltZXJTeXN0ZW0uanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9UaW1lck1vZHVsZS9UaW1lclN5c3RlbS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7O0dBS0c7OztBQUlILDZDQUF5QztBQUV6QyxpREFBaUU7QUFDakUsK0NBQTRDO0FBRzVDLE1BQWEsV0FBVztJQUVYLFVBQVUsR0FBRyxhQUFhLENBQUM7SUFFbkIsT0FBTyxHQUFHLElBQUksR0FBRyxFQUFzQixDQUFDO0lBQ3pELGlEQUFpRDtJQUNoQyxjQUFjLEdBQWEsRUFBRSxDQUFDO0lBQy9DLDJDQUEyQztJQUMxQixRQUFRLEdBQWEsRUFBRSxDQUFDO0lBQ2pDLE9BQU8sR0FBRyxDQUFDLENBQUM7SUFDWixZQUFZLEdBQUcsQ0FBQyxDQUFDO0lBQ2pCLFFBQVEsR0FBRyxLQUFLLENBQUM7SUFFekIseUVBQXlFO0lBRXpFLE1BQU0sQ0FBQyxHQUFrQixJQUFzQixDQUFDO0lBRWhELFFBQVEsQ0FBQyxTQUFpQjtRQUN0QixJQUFJLENBQUMsUUFBUSxHQUFHLElBQUksQ0FBQztRQUVyQixrQ0FBa0M7UUFDbEMsS0FBSyxNQUFNLEVBQUUsSUFBSSxJQUFJLENBQUMsT0FBTyxDQUFDLElBQUksRUFBRTtZQUFFLElBQUksQ0FBQyxRQUFRLENBQUMsSUFBSSxDQUFDLEVBQUUsQ0FBQyxDQUFDO1FBRTdELEtBQUssTUFBTSxFQUFFLElBQUksSUFBSSxDQUFDLFFBQVEsRUFBRSxDQUFDO1lBQzdCLE1BQU0sS0FBSyxHQUFHLElBQUksQ0FBQyxPQUFPLENBQUMsR0FBRyxDQUFDLEVBQUUsQ0FBQyxDQUFDO1lBQ25DLElBQUksQ0FBQyxLQUFLLElBQUksS0FBSyxDQUFDLE1BQU0sSUFBSSxLQUFLLENBQUMsYUFBYTtnQkFBRSxTQUFTO1lBRTVELE1BQU0sUUFBUSxHQUFHLElBQUEsMEJBQVcsRUFBQyxLQUFLLENB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

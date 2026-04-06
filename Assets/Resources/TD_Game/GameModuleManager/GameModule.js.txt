@@ -1,0 +1,135 @@
+"use strict";
+/**
+ * GameModule — 游戏逻辑模块管理器
+ *
+ * 职责：
+ *   - 维护游戏逻辑模块的注册表，提供按名 O(1) 查找
+ *   - 驱动模块生命周期：init() → update(dt) × N → shutdown()
+ *   - 作为模块间通信唯一入口：各模块通过 getModule() 获取其它模块，保证低耦合
+ *
+ * 设计要点：
+ *   - 高性能：Map 存储 + 独立 _updateables 数组，无每帧类型判断
+ *   - 低耦合：模块仅依赖 IGameModuleManager，不直接引用其它游戏模块
+ *   - 高内聚：每个 IGameLogicModule 只负责一块领域逻辑
+ *   - 与 Framework 一致的生命周期与命名风格，便于与 TDGameLayer 集成
+ *
+ * 使用示例：
+ *   const manager = new GameModule();
+ *   manager
+ *     .registerModule(new WaveSystem())
+ *     .registerModule(new BuildSystem())
+ *     .registerModule(new EconomySystem());
+ *   manager.init(framework);
+ *   // 在 TDGameLayer.onUpdate 中：manager.update(deltaTime);
+ *   // 在模块内：const build = this._manager.getModule<BuildSystem>("BuildSystem");
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GameModule = void 0;
+const GameLaunchModule_1 = require("../GameLaunchModule");
+// ─── GameModule ───────────────────────────────────────────────────────────────
+class GameModule {
+    /** 框架引用，init(framework) 后可用 */
+    _framework;
+    /** 名称 → 模块实例，保证 O(1) 查找 */
+    _modules = new Map();
+    /** 实现了 onUpdate 的模块列表，避免每帧对全部模块做函数存在性判断 */
+    _updateables = [];
+    _initialized = false;
+    // ── IGameModuleManager 只读视图 ───────────────────────────────────────────
+    get framework() {
+        if (!this._framework) {
+            throw new Error("[GameModule] Not initialized. Call init(framework) first.");
+        }
+        return this._framework;
+    }
+    get isInitialized() {
+        return this._initialized;
+    }
+    getModule(name) {
+        const mod = this._modules.get(name);
+        if (!mod) {
+            throw new Error(`[GameModule] Module "${name}" not found.`);
+        }
+        return mod;
+    }
+    tryGetModule(name) {
+        return this._modules.get(name);
+    }
+    // ── 注册模块（模块）──────────────────────────────────────────────────────
+    registerGameModule() {
+        //TODO:这里注册游戏模块
+        this.registerModule(new GameLaunchModule_1.GameLaunchModule());
+    }
+    // ── 注册（init 之前）──────────────────────────────────────────────────────
+    /**
+     * 注册一个游戏逻辑模块。必须在 init() 之前调用，支持链式调用。
+     */
+    registerModule(module) {
+        if (this._initialized) {
+            console.error(`[GameModule] Cannot register "${module.moduleName}" after init().`);
+            return this;
+        }
+        if (this._modules.has(module.moduleName)) {
+            console.warn(`[GameModule] Module "${module.moduleName}" already registered, skipping.`);
+            return this;
+        }
+        this._modules.set(module.moduleName, module);
+        if (typeof module.onUpdate === "function") {
+            this._updateables.push(module);
+        }
+        return this;
+    }
+    // ── 生命周期 ─────────────────────────────────────────────────────────────
+    /**
+     * 绑定框架并初始化所有已注册模块。由 TDGameLayer.onInit 内调用一次。
+     */
+    init(framework) {
+        if (this._initialized) {
+            console.warn("[GameModule] Already initialized.");
+            return;
+        }
+        this._framework = framework;
+        const total = this._modules.size;
+        for (const mod of this._modules.values()) {
+            try {
+                mod.onInit(this);
+            }
+            catch (err) {
+                console.error(`[GameModule] onInit failed: ${mod.moduleName}`, err);
+                throw err;
+            }
+        }
+        this._initialized = true;
+    }
+    /**
+     * 每帧更新。由 TDGameLayer.onUpdate 调用。
+     */
+    update(deltaTime) {
+        if (!this._initialized)
+            return;
+        for (const mod of this._updateables) {
+            mod.onUpdate(deltaTime);
+        }
+    }
+    /**
+     * 逆序关闭所有模块并清空注册表。由 TDGameLayer.onShutdown 调用。
+     */
+    shutdown() {
+        if (!this._initialized)
+            return;
+        const mods = Array.from(this._modules.values()).reverse();
+        for (const mod of mods) {
+            try {
+                mod.onShutdown();
+            }
+            catch (err) {
+                console.error(`[GameModule] onShutdown failed: ${mod.moduleName}`, err);
+            }
+        }
+        this._modules.clear();
+        this._updateables.length = 0;
+        this._initialized = false;
+    }
+}
+exports.GameModule = GameModule;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiR2FtZU1vZHVsZS5qcyIsInNvdXJjZVJvb3QiOiIiLCJzb3VyY2VzIjpbIi4uLy4uLy4uLy4uL1RzUHJvamVjdF9URC9zcmMvVERfR2FtZS9HYW1lTW9kdWxlTWFuYWdlci9HYW1lTW9kdWxlLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7R0F1Qkc7OztBQUdILDBEQUF1RDtBQUd2RCxpRkFBaUY7QUFFakYsTUFBYSxVQUFVO0lBRW5CLCtCQUErQjtJQUN2QixVQUFVLENBQWlCO0lBRW5DLDJCQUEyQjtJQUNWLFFBQVEsR0FBRyxJQUFJLEdBQUcsRUFBNEIsQ0FBQztJQUVoRSwyQ0FBMkM7SUFDMUIsWUFBWSxHQUF1QixFQUFFLENBQUM7SUFFL0MsWUFBWSxHQUFHLEtBQUssQ0FBQztJQUU3Qix5RUFBeUU7SUFFekUsSUFBSSxTQUFTO1FBQ1QsSUFBSSxDQUFDLElBQUksQ0FBQyxVQUFVLEVBQUUsQ0FBQztZQUNuQixNQUFNLElBQUksS0FBSyxDQUFDLDJEQUEyRCxDQUFDLENBQUM7UUFDakYsQ0FBQztRQUNELE9BQU8sSUFBSSxDQUFDLFVBQVUsQ0FBQztJQUMzQixDQUFDO0lBRUQsSUFBSSxhQUFhO1FBQ2IsT0FBTyxJQUFJLENBQUMsWUFBWSxDQUFDO0lBQzdCLENBQUM7SUFFRCxTQUFTLENBQTZCLElBQVk7UUFDOUMsTUFBTSxHQUFHLEdBQUcsSUFBSSxDQUFDLFFBQVEsQ0FBQyxHQUFHLENBQUMsSUFBSSxDQUFDLENBQUM7UUFDcEMsSUFBSSxDQUFDLEdBQUcsRUFBRSxDQUFDO1lBQ1AsTUFBTSxJQUFJLEtBQUssQ0FBQyx3QkFBd0IsSUFBSSxjQUFjLENBQUMsQ0FBQztRQUNoRSxDQUFDO1FBQ0QsT0FBTyxHQUFRLENBQUM7SUFDcEIsQ0FBQztJQUVELFlBQVksQ0FBNkIsSUFBWTtRQUNqRCxPQUFPLElBQUksQ0FBQyxRQUFRLENBQUMsR0FBRyxDQUFDLElBQUksQ0FBa0IsQ0FBQztJQUNwRCxDQUFD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

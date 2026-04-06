@@ -1,0 +1,29 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "com.tencent.puerts.core", "com.tencent.puerts.core.csproj", "{d125c647-75ec-f612-d901-bde4697af359}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Assembly-CSharp", "Assembly-CSharp.csproj", "{cf39f6cf-beb4-18e1-0a54-5a40773213e6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Assembly-CSharp-Editor", "Assembly-CSharp-Editor.csproj", "{fc83f119-d896-380c-cfa4-6ad7fb0ffbb0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "com.tencent.puerts.core.Editor", "com.tencent.puerts.core.Editor.csproj", "{3465cc71-3ecd-feb6-84a5-5832e7ab9953}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{d125c647-75ec-f612-d901-bde4697af359}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{d125c647-75ec-f612-d901-bde4697af359}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{cf39f6cf-beb4-18e1-0a54-5a40773213e6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{cf39f6cf-beb4-18e1-0a54-5a40773213e6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{fc83f119-d896-380c-cfa4-6ad7fb0ffbb0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{fc83f119-d896-380c-cfa4-6ad7fb0ffbb0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3465cc71-3ecd-feb6-84a5-5832e7ab9953}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3465cc71-3ecd-feb6-84a5-5832e7ab9953}.Debug|Any CPU.Build.0 = Debug|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

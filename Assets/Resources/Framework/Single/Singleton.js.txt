@@ -1,0 +1,52 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Singleton = void 0;
+/**
+ * Singleton<T> — 泛型单例基类
+ *
+ * 用法：
+ *   class MyManager extends Singleton<MyManager> {
+ *       doSomething() { ... }
+ *   }
+ *
+ *   // 获取单例（首次调用时自动创建）
+ *   MyManager.getInstance().doSomething();
+ *
+ *   // 销毁单例
+ *   MyManager.destroyInstance();
+ *
+ * 注意：
+ *   - 子类必须提供无参构造函数（或不声明构造函数）。
+ *   - 如需在构造函数中执行初始化逻辑，请重写 onInit()，在 getInstance() 首次调用后由框架或业务代码主动调用。
+ */
+class Singleton {
+    static _instances = new Map();
+    constructor() { }
+    /**
+     * 获取子类单例实例。
+     * 首次调用时自动通过无参构造函数创建实例并缓存。
+     */
+    static getInstance() {
+        const key = this;
+        let inst = Singleton._instances.get(key);
+        if (inst == null) {
+            inst = new this();
+            Singleton._instances.set(key, inst);
+        }
+        return inst;
+    }
+    /**
+     * 销毁子类单例，释放缓存引用。
+     */
+    static destroyInstance() {
+        Singleton._instances.delete(this);
+    }
+    /**
+     * 判断子类单例是否已创建。
+     */
+    static hasInstance() {
+        return Singleton._instances.has(this);
+    }
+}
+exports.Singleton = Singleton;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU2luZ2xldG9uLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vVHNQcm9qZWN0X1REL3NyYy9GcmFtZXdvcmsvU2luZ2xlL1NpbmdsZXRvbi50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOzs7QUFBQTs7Ozs7Ozs7Ozs7Ozs7Ozs7R0FpQkc7QUFDSCxNQUFzQixTQUFTO0lBRW5CLE1BQU0sQ0FBVSxVQUFVLEdBQUcsSUFBSSxHQUFHLEVBQTRCLENBQUM7SUFFekUsZ0JBQXlCLENBQUM7SUFFMUI7OztPQUdHO0lBQ0gsTUFBTSxDQUFDLFdBQVc7UUFDZCxNQUFNLEdBQUcsR0FBRyxJQUEyQixDQUFDO1FBQ3hDLElBQUksSUFBSSxHQUFHLFNBQVMsQ0FBQyxVQUFVLENBQUMsR0FBRyxDQUFDLEdBQUcsQ0FBQyxDQUFDO1FBQ3pDLElBQUksSUFBSSxJQUFJLElBQUksRUFBRSxDQUFDO1lBQ2YsSUFBSSxHQUFHLElBQUksSUFBSSxFQUFFLENBQUM7WUFDbEIsU0FBUyxDQUFDLFVBQVUsQ0FBQyxHQUFHLENBQUMsR0FBRyxFQUFFLElBQUksQ0FBQyxDQUFDO1FBQ3hDLENBQUM7UUFDRCxPQUFPLElBQVMsQ0FBQztJQUNyQixDQUFDO0lBRUQ7O09BRUc7SUFDSCxNQUFNLENBQUMsZUFBZTtRQUNsQixTQUFTLENBQUMsVUFBVSxDQUFDLE1BQU0sQ0FBQyxJQUEyQixDQUFDLENBQUM7SUFDN0QsQ0FBQztJQUVEOztPQUVHO0lBQ0gsTUFBTSxDQUFDLFdBQVc7UUFDZCxPQUFPLFNBQVMsQ0FBQyxVQUFVLENBQUMsR0FBRyxDQUFDLElBQTJCLENBQUMsQ0FBQztJQUNqRSxDQUFDOztBQWhDTCw4QkFpQ0MifQ==

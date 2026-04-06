@@ -1,0 +1,80 @@
+"use strict";
+/**
+ * Framework 公共 API 出口
+ * 外部代码统一从此文件导入，无需关心内部目录结构。
+ *
+ * 用法示例：
+ *   import { GameFramework, IModule, FrameworkEvents, CoreModuleNames, EventSystem } from "../Framework";
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DelaySceneTransition = exports.NullSceneTransition = exports.SceneTransitionBase = exports.SceneLoadFailReason = exports.SceneState = exports.SceneLoadMode = exports.SceneSystem = exports.UIOpenFailReason = exports.UIOpenMode = exports.UILayer = exports.UIComponent = exports.ServiceBase = exports.ModelBase = exports.ViewBase = exports.UINodeBase = exports.UIStage = exports.getUIClassCtor = exports.UIClass = exports.UISystem = exports.StateBase = exports.StateMachine = exports.SAVE_FILE_EXT = exports.PlatformSaveStorage = exports.JsonSaveSerializer = exports.SAVE_MODE_EXT = exports.SaveMode = exports.SaveSystem = exports.ResGameObjectFactory = exports.GameObjectFactory = exports.ResettableFactory = exports.SimpleFactory = exports.PoolSystem = exports.ResLoadType = exports.ResSystem = exports.TimerType = exports.TimerSystem = exports.LogLevel = exports.LogSystem = exports.ComputingSystem = exports.EventBus = exports.EventSystem = exports.CoreModuleNames = exports.FrameworkEvents = exports.GameFramework = exports.Singleton = void 0;
+// ── 单例基类 ──────────────────────────────────────────────────────────────────
+var Single_1 = require("./Single");
+Object.defineProperty(exports, "Singleton", { enumerable: true, get: function () { return Single_1.Singleton; } });
+// ── 核心框架 ──────────────────────────────────────────────────────────────────
+var GameFramework_1 = require("./GameFramework");
+Object.defineProperty(exports, "GameFramework", { enumerable: true, get: function () { return GameFramework_1.GameFramework; } });
+Object.defineProperty(exports, "FrameworkEvents", { enumerable: true, get: function () { return GameFramework_1.FrameworkEvents; } });
+Object.defineProperty(exports, "CoreModuleNames", { enumerable: true, get: function () { return GameFramework_1.CoreModuleNames; } });
+// ── 事件系统 ──────────────────────────────────────────────────────────────────
+var EventModule_1 = require("./EventModule");
+Object.defineProperty(exports, "EventSystem", { enumerable: true, get: function () { return EventModule_1.EventSystem; } });
+Object.defineProperty(exports, "EventBus", { enumerable: true, get: function () { return EventModule_1.EventBus; } });
+// ── CPU / GPU 压力检测模块 ────────────────────────────────────────────────────
+var CPUAndGPUComputing_1 = require("./CPUAndGPUComputing");
+Object.defineProperty(exports, "ComputingSystem", { enumerable: true, get: function () { return CPUAndGPUComputing_1.ComputingSystem; } });
+// ── 日志模块 ──────────────────────────────────────────────────────────────────
+var LogModule_1 = require("./LogModule");
+Object.defineProperty(exports, "LogSystem", { enumerable: true, get: function () { return LogModule_1.LogSystem; } });
+Object.defineProperty(exports, "LogLevel", { enumerable: true, get: function () { return LogModule_1.LogLevel; } });
+// ── 计时器模块 ────────────────────────────────────────────────────────────────
+var TimerModule_1 = require("./TimerModule");
+Object.defineProperty(exports, "TimerSystem", { enumerable: true, get: function () { return TimerModule_1.TimerSystem; } });
+Object.defineProperty(exports, "TimerType", { enumerable: true, get: function () { return TimerModule_1.TimerType; } });
+// ── 资源模块 ──────────────────────────────────────────────────────────────────
+var ResModule_1 = require("./ResModule");
+Object.defineProperty(exports, "ResSystem", { enumerable: true, get: function () { return ResModule_1.ResSystem; } });
+Object.defineProperty(exports, "ResLoadType", { enumerable: true, get: function () { return ResModule_1.ResLoadType; } });
+// ── 对象池模块 ────────────────────────────────────────────────────────────────
+var PoolModule_1 = require("./PoolModule");
+Object.defineProperty(exports, "PoolSystem", { enumerable: true, get: function () { return PoolModule_1.PoolSystem; } });
+Object.defineProperty(exports, "SimpleFactory", { enumerable: true, get: function () { return PoolModule_1.SimpleFactory; } });
+Object.defineProperty(exports, "ResettableFactory", { enumerable: true, get: function () { return PoolModule_1.ResettableFactory; } });
+Object.defineProperty(exports, "GameObjectFactory", { enumerable: true, get: function () { return PoolModule_1.GameObjectFactory; } });
+Object.defineProperty(exports, "ResGameObjectFactory", { enumerable: true, get: function () { return PoolModule_1.ResGameObjectFactory; } });
+// ── 存档模块 ──────────────────────────────────────────────────────────────────
+var SaveModule_1 = require("./SaveModule");
+Object.defineProperty(exports, "SaveSystem", { enumerable: true, get: function () { return SaveModule_1.SaveSystem; } });
+Object.defineProperty(exports, "SaveMode", { enumerable: true, get: function () { return SaveModule_1.SaveMode; } });
+Object.defineProperty(exports, "SAVE_MODE_EXT", { enumerable: true, get: function () { return SaveModule_1.SAVE_MODE_EXT; } });
+Object.defineProperty(exports, "JsonSaveSerializer", { enumerable: true, get: function () { return SaveModule_1.JsonSaveSerializer; } });
+Object.defineProperty(exports, "PlatformSaveStorage", { enumerable: true, get: function () { return SaveModule_1.PlatformSaveStorage; } });
+Object.defineProperty(exports, "SAVE_FILE_EXT", { enumerable: true, get: function () { return SaveModule_1.SAVE_FILE_EXT; } });
+// ── 状态机模块 ────────────────────────────────────────────────────────────────
+var StateMachine_1 = require("./StateMachine");
+Object.defineProperty(exports, "StateMachine", { enumerable: true, get: function () { return StateMachine_1.StateMachine; } });
+Object.defineProperty(exports, "StateBase", { enumerable: true, get: function () { return StateMachine_1.StateBase; } });
+// ── UI 模块 ───────────────────────────────────────────────────────────────────
+var UISystem_1 = require("./UISystem");
+Object.defineProperty(exports, "UISystem", { enumerable: true, get: function () { return UISystem_1.UISystem; } });
+Object.defineProperty(exports, "UIClass", { enumerable: true, get: function () { return UISystem_1.UIClass; } });
+Object.defineProperty(exports, "getUIClassCtor", { enumerable: true, get: function () { return UISystem_1.getUIClassCtor; } });
+Object.defineProperty(exports, "UIStage", { enumerable: true, get: function () { return UISystem_1.UIStage; } });
+Object.defineProperty(exports, "UINodeBase", { enumerable: true, get: function () { return UISystem_1.UINodeBase; } });
+Object.defineProperty(exports, "ViewBase", { enumerable: true, get: function () { return UISystem_1.ViewBase; } });
+Object.defineProperty(exports, "ModelBase", { enumerable: true, get: function () { return UISystem_1.ModelBase; } });
+Object.defineProperty(exports, "ServiceBase", { enumerable: true, get: function () { return UISystem_1.ServiceBase; } });
+Object.defineProperty(exports, "UIComponent", { enumerable: true, get: function () { return UISystem_1.UIComponent; } });
+Object.defineProperty(exports, "UILayer", { enumerable: true, get: function () { return UISystem_1.UILayer; } });
+Object.defineProperty(exports, "UIOpenMode", { enumerable: true, get: function () { return UISystem_1.UIOpenMode; } });
+Object.defineProperty(exports, "UIOpenFailReason", { enumerable: true, get: function () { return UISystem_1.UIOpenFailReason; } });
+// ── 场景模块 ──────────────────────────────────────────────────────────────────
+var SceneSystem_1 = require("./SceneSystem");
+Object.defineProperty(exports, "SceneSystem", { enumerable: true, get: function () { return SceneSystem_1.SceneSystem; } });
+Object.defineProperty(exports, "SceneLoadMode", { enumerable: true, get: function () { return SceneSystem_1.SceneLoadMode; } });
+Object.defineProperty(exports, "SceneState", { enumerable: true, get: function () { return SceneSystem_1.SceneState; } });
+Object.defineProperty(exports, "SceneLoadFailReason", { enumerable: true, get: function () { return SceneSystem_1.SceneLoadFailReason; } });
+Object.defineProperty(exports, "SceneTransitionBase", { enumerable: true, get: function () { return SceneSystem_1.SceneTransitionBase; } });
+Object.defineProperty(exports, "NullSceneTransition", { enumerable: true, get: function () { return SceneSystem_1.NullSceneTransition; } });
+Object.defineProperty(exports, "DelaySceneTransition", { enumerable: true, get: function () { return SceneSystem_1.DelaySceneTransition; } });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9pbmRleC50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7OztHQU1HOzs7QUFFSCw2RUFBNkU7QUFDN0UsbUNBQXFDO0FBQTVCLG1HQUFBLFNBQVMsT0FBQTtBQUVsQiw2RUFBNkU7QUFDN0UsaURBQWtGO0FBQXpFLDhHQUFBLGFBQWEsT0FBQTtBQUFFLGdIQUFBLGVBQWUsT0FBQTtBQUFFLGdIQUFBLGVBQWUsT0FBQTtBQUd4RCw2RUFBNkU7QUFDN0UsNkNBQXVGO0FBQTlFLDBHQUFBLFdBQVcsT0FBQTtBQUFFLHVHQUFBLFFBQVEsT0FBQTtBQUk5QiwyRUFBMkU7QUFDM0UsMkRBQXVEO0FBQTlDLHFIQUFBLGVBQWUsT0FBQTtBQUd4Qiw2RUFBNkU7QUFDN0UseUNBQWtEO0FBQXpDLHNHQUFBLFNBQVMsT0FBQTtBQUFFLHFHQUFBLFFBQVEsT0FBQTtBQUc1Qiw0RUFBNEU7QUFDNUUsNkNBQXVEO0FBQTlDLDBHQUFBLFdBQVcsT0FBQTtBQUFFLHdHQUFBLFNBQVMsT0FBQTtBQUcvQiw2RUFBNkU7QUFDN0UseUNBQXFEO0FBQTVDLHNHQUFBLFNBQVMsT0FBQTtBQUFFLHdHQUFBLFdBQVcsT0FBQTtBQUcvQiw0RUFBNEU7QUFDNUUsMkNBQytFO0FBRHRFLHdHQUFBLFVBQVUsT0FBQTtBQUFFLDJHQUFBLGFBQWEsT0FBQTtBQUFFLCtHQUFBLGlCQUFpQixPQUFBO0FBQzVDLCtHQUFBLGlCQUFpQixPQUFBO0FBQUUsa0hBQUEsb0JBQW9CLE9BQUE7QUFLaEQsNkVBQTZFO0FBQzdFLDJDQUUrRTtBQUZ0RSx3R0FBQSxVQUFVLE9BQUE7QUFBRSxzR0FBQSxRQUFRLE9BQUE7QUFBRSwyR0FBQSxhQUFhLE9BQUE7QUFDbkMsZ0hBQUEsa0JBQWtCLE9BQUE7QUFBRSxpSEFBQSxtQkFBbUIsT0FBQTtBQUN2QywyR0FBQSxhQUFhLE9BQUE7QUFLdEIsNEVBQTRFO0FBQzVFLCtDQUFvRjtBQUEzRSw0R0FBQSxZQUFZLE9BQUE7QUFBRSx5R0FBQSxTQUFTLE9BQUE7QUFLaEMsK0VBQStFO0FBQy9FLHVDQUc2RTtBQUhwRSxvR0FBQSxRQUFRLE9BQUE7QUFBRSxtR0FBQSxPQUFPLE9BQUE7QUFBRSwwR0FBQSxjQUFjLE9BQUE7QUFDakMsbUdBQUEsT0FBTyxPQUFBO0FBQUUsc0dBQUEsVUFBVSxPQUFBO0FBQUUsb0dBQUEsUUFBUSxPQUFBO0FBQzdCLHFHQUFBLFNBQVMsT0FBQTtBQUFFLHVHQUFBLFdBQVcsT0FBQTtBQUFFLHVHQUFBLFdBQVcsT0FBQTtBQUNuQyxtR0FBQSxPQUFPLE9BQUE7QUFBRSxzR0FBQSxVQUFVLE9BQUE7QUFBRSw0R0FBQSxnQkFBZ0IsT0FBQTtBQU85Qyw2RUFBNkU7QUFDN0UsNkNBR2dGO0FBSHZFLDBHQUFBLFdBQVcsT0FBQTtBQUFFLDRHQUFBLGFBQWEsT0FBQTtBQUFFLHlHQUFBLFVBQVUsT0FBQTtBQUN0QyxrSEFBQSxtQkFBbUIsT0FBQTtBQUNuQixrSEFBQSxtQkFBbUIsT0FBQTtBQUFFLGtIQUFBLG1CQUFtQixPQUFBO0FBQ3hDLG1IQUFBLG9CQUFvQixPQUFBIn0=

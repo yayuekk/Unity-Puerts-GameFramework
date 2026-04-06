@@ -1,0 +1,15 @@
+"use strict";
+/**
+ * GameLaunchModule — 游戏启动模块公共 API
+ *
+ * 使用方式：
+ *   import { GameLaunchModule, GAME_LAUNCH_MODULE_NAME } from "../GameLaunchModule";
+ *   manager.registerModule(new GameLaunchModule());
+ *   const launch = manager.getModule<GameLaunchModule>(GAME_LAUNCH_MODULE_NAME);
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GAME_LAUNCH_MODULE_NAME = exports.GameLaunchModule = void 0;
+var GameLaunchModule_1 = require("./GameLaunchModule");
+Object.defineProperty(exports, "GameLaunchModule", { enumerable: true, get: function () { return GameLaunchModule_1.GameLaunchModule; } });
+Object.defineProperty(exports, "GAME_LAUNCH_MODULE_NAME", { enumerable: true, get: function () { return GameLaunchModule_1.GAME_LAUNCH_MODULE_NAME; } });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL1REX0dhbWUvR2FtZUxhdW5jaE1vZHVsZS9pbmRleC50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7R0FPRzs7O0FBRUgsdURBQStFO0FBQXRFLG9IQUFBLGdCQUFnQixPQUFBO0FBQUUsMkhBQUEsdUJBQXVCLE9BQUEifQ==

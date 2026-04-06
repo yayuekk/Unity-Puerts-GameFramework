@@ -1,0 +1,66 @@
+/**
+ * UIClassRegistry — UI 类全局注册表 + @UIClass 装饰器
+ *
+ * 设计目标：
+ *   彻底消除手动注册调用。只需在类定义上添加 @UIClass 装饰器，
+ *   框架即可在 openUI / createComponent 时按类名自动找到对应构造函数。
+ *
+ * 工作原理：
+ *   @UIClass 装饰器在模块加载时（import 阶段）自动执行，将类名与构造函数
+ *   写入模块级 Map。只要该 TS 文件被引入（直接或通过 barrel 文件），
+ *   注册就会自动完成，无需任何额外调用。
+ *
+ * 适用范围：
+ *   ViewBase 子类、ModelBase 子类、ServiceBase 子类、UIComponent 子类
+ *   —— 所有需要被 UIConfig / ComponentConfig 按类名驱动的 TS 类。
+ *
+ * 使用示例：
+ *   @UIClass
+ *   export class MainMenuView extends ViewBase { ... }
+ *
+ *   @UIClass
+ *   export class MainMenuModel extends ModelBase { ... }
+ *
+ *   @UIClass
+ *   export class ItemCellComponent extends UIComponent { ... }
+ *
+ * 注意：
+ *   TypeScript 在生产构建开启 minify 时可能会混淆类名（class.name 变为单字母）。
+ *   若遇到此问题，请确保构建工具对 UI 类保留原始类名，或在 UIConfig 中填写
+ *   与混淆后一致的名称。
+ */
+
+const _registry = new Map<string, new () => any>();
+
+/**
+ * 类装饰器：将 TS 类按其 `name` 属性自动注册到全局 UI 类注册表。
+ *
+ * UISystem 在 openUI 时读取预制体 UIConfig 中的
+ * viewClassName / modelClassName / serviceClassName，
+ * 并通过此表查找对应构造函数来实例化 MVC 层。
+ *
+ * UINodeBase.createComponent 省略 ctor 参数时，也通过此表查找
+ * ComponentConfig.componentClassName 对应的 UIComponent 子类。
+ *
+ * @example
+ *   @UIClass
+ *   export class ShopView extends ViewBase {
+ *       protected override async onCreate() { ... }
+ *       // ...
+ *   }
+ */
+export function UIClass<T extends new (...args: any[]) => any>(ctor: T): T {
+    _registry.set(ctor.name, ctor as unknown as new () => any);
+    return ctor;
+}
+
+/**
+ * [框架内部] 按类名查询已注册的构造函数。
+ * 由 UISystem._doLoadAndOpen 和 UINodeBase.createComponent 调用，业务代码不应直接使用。
+ *
+ * @param name  TS 类名（对应 UIConfig.viewClassName 等字段）
+ * @returns     对应的构造函数，未注册时返回 undefined
+ */
+export function getUIClassCtor(name: string): (new () => any) | undefined {
+    return _registry.get(name);
+}

@@ -1,0 +1,341 @@
+"use strict";
+/**
+ * ResSystem — 资源加载系统核心
+ *
+ * 职责：
+ *   - 统一管理 Addressable 和 Resources 两套加载通道的完整生命周期
+ *   - 对共享资产实施引用计数，引用归零时自动调用正确的卸载 API 防止内存泄漏
+ *   - 对 Addressable 实例提供统一的创建与销毁入口，确保销毁路径唯一
+ *
+ * 并发安全：
+ *   同一 Addressable key 的并发加载请求只发起一次底层 LoadAssetAsync，
+ *   后续请求等待同一 Promise（基于 JavaScript 单线程事件循环保证）。
+ *
+ * 使用约定（在整个项目范围内强制执行）：
+ *   1. 加载任意资产后持有返回的 IResHandle，用完调用 handle.release()
+ *   2. GameObject 实例化必须通过 instantiateAsync，禁止 Object.Instantiate
+ *   3. GameObject 销毁必须通过 handle.release() 或 releaseInstance()，禁止 Object.Destroy
+ *   4. 场景卸载前调用 releaseAll() 彻底清理内存
+ *
+ * 依赖：
+ *   - puerts $promise：将 C# System.Threading.Tasks.Task 转为 JS Promise
+ *   - C# 桥接：通过 require("csharp") 获取，与 index.cts 一致，避免全局 CS 未注入
+ *   - UnityEngine.AddressableAssets.Addressables：Addressable 加载与卸载
+ *   - UnityEngine.Resources：Resources 文件夹同步加载与卸载
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ResSystem = void 0;
+const puerts_1 = require("puerts");
+// PuerTS C# 桥接：优先使用 csharp 模块（与 index.cts 一致），避免依赖未注入的全局 CS
+const _CS = (function () {
+    try {
+        return require("csharp");
+    }
+    catch {
+        return typeof globalThis !== "undefined" ? globalThis.CS : undefined;
+    }
+})();
+if (typeof _CS === "undefined") {
+    throw new Error("[ResSystem] C# bridge not available: neither require('csharp') nor global CS.");
+}
+const ResTypes_1 = require("./ResTypes");
+const ResHandle_1 = require("./ResHandle");
+// ─── PuerTS ↔ Unity C# 桥接辅助 ──────────────────────────────────────────────
+// 将所有 CS namespace 调用集中于此，与业务逻辑彻底解耦，
+// 方便在不同 Puerts 版本或 Unity 版本下统一调整。
+/** AddressablesBridge.LoadAssetAsync(key) → AsyncOperationHandle（因 Puerts 未生成 Addressables.LoadAssetAsync 绑定，走 C# 桥接） */
+function addrLoad(key) {
+    return _CS.AddressablesBridge.LoadAssetAsync(key);
+}
+/**
+ * AddressablesBridge.InstantiateAsync(key [, parent]) → AsyncOperationHandle<GameObject>
+ * parent 为 CS.UnityEngine.Transform，不传则实例置于场景根。
+ */
+function addrInstantiate(key, parent) {
+    return parent != null
+        ? _CS.AddressablesBridge.InstantiateAsync(key, parent)
+        : _CS.AddressablesBridge.InstantiateAsync(key);
+}
+/** AddressablesBridge.Release(operationHandle) — 卸载非实例资产或释放失败的 AsyncOperationHandle */
+function addrRelease(opHandle) {
+    _CS.AddressablesBridge.Release(opHandle);
+}
+/** AddressablesBridge.ReleaseInstance(go) — 销毁 GameObject 并释放 Addressable 引用 */
+function addrReleaseInstance(go) {
+    _CS.AddressablesBridge.ReleaseInstance(go);
+}
+/** Resources.Load(path) → UnityEngine.Object（同步） */
+function resLoad(path) {
+    return _CS.UnityEngine.Resources.Load(path);
+}
+/** Resources.UnloadAsset(asset) — 卸载非实例资产 */
+function resUnload(asset) {
+    _CS.UnityEngine.Resources.UnloadAsset(asset);
+}
+// ─── ResSystem ────────────────────────────────────────────────────────────────
+class ResSystem {
+    moduleName = "ResSystem";
+    _addrAssets = new Map();
+    _resAssets = new Map();
+    /**
+     * 存活实例映射：key = GameObject 引用，value = Addressable address。
+     * 用于 releaseAll() 遍历销毁，以及 releaseInstance() 有效性校验。
+     */
+    _instances = new Map();
+    _log;
+    // ── IModule 生命周期 ──────────────────────────────────────────────────────
+    onInit(fw) {
+        const logSys = fw.tryGetModule("LogSystem");
+        this._log = logSys?.registerChannel("res", "ResSystem");
+        this._log?.info("ResSystem initialized.");
+    }
+    onShutdown() {
+        this.releaseAll();
+        this._log?.info("ResSystem shutdown complete.");
+    }
+    // ── IResSystem — 加载接口 ─────────────────────────────────────────────────
+    async loadAsync(key) {
+        const existing = this._addrAssets.get(key);
+        if (existing) {
+            // 若同一 key 正在加载中，等待其完成再共享结果
+            if (existing.pending !== null) {
+                await existing.pending;
+                // 等待期间 releaseAll() 可能已清空 map 并标记 cancelled
+                if (existing.cancelled) {
+                    throw new Error(`[ResSystem] Load of "${key}" was cancelled by releaseAll.`);
+                }
+            }
+            if (existing.asset === null) {
+                throw new Error(`[ResSystem] Addressable "${key}" failed to load.`);
+            }
+            existing.refCount++;
+            this._log?.debug(`loadAsync: cache hit "${key}" (refCount=${existing.refCount})`);
+            return new ResHandle_1.ResHandle(this, "asset", key, ResTypes_1.ResLoadType.Addressable, existing.asset);
+        }
+        // 首次加载：注册条目后立即发起异步请求
+        const entry = {
+            key, asset: null, opHandle: null, refCount: 0, pending: null, cancelled: false,
+        };
+        this._addrAssets.set(key, entry);
+        const loadPromise = this._execAddrLoad(key, entry);
+        entry.pending = loadPromise;
+        try {
+            await loadPromise;
+        }
+        finally {
+            entry.pending = null;
+        }
+        // releaseAll() 在等待期间被调用：条目已从 map 移除并标记取消。
+        // 若加载恰好成功，此处负责释放 opHandle，防止 Unity 资源泄漏。
+        if (entry.cancelled) {
+            if (entry.opHandle !== null) {
+                try {
+                    addrRelease(entry.opHandle);
+                }
+                catch { /* 仅做最大努力释放 */ }
+            }
+            throw new Error(`[ResSystem] Load of "${key}" was cancelled by releaseAll.`);
+        }
+        if (entry.asset === null) {
+            this._addrAssets.delete(key);
+            throw new Error(`[ResSystem] Failed to load Addressable: "${key}"`);
+        }
+        entry.refCount = 1;
+        this._log?.debug(`loadAsync: loaded "${key}"`);
+        return new ResHandle_1.ResHandle(this, "asset", key, ResTypes_1.ResLoadType.Addressable, entry.asset);
+    }
+    async loadFromResourcesAsync(path) {
+        const existing = this._resAssets.get(path);
+        if (existing) {
+            existing.refCount++;
+            this._log?.debug(`loadFromResourcesAsync: cache hit "${path}" (refCount=${existing.refCount})`);
+            return new ResHandle_1.ResHandle(this, "asset", path, ResTypes_1.ResLoadType.Resources, existing.asset);
+        }
+        const asset = resLoad(path);
+        if (asset == null) {
+            throw new Error(`[ResSystem] Resources.Load returned null for path "${path}"`);
+        }
+        const entry = { path, asset, refCount: 1 };
+        this._resAssets.set(path, entry);
+        this._log?.debug(`loadFromResourcesAsync: loaded "${path}"`);
+        return new ResHandle_1.ResHandle(this, "asset", path, ResTypes_1.ResLoadType.Resources, asset);
+    }
+    async instantiateAsync(key, parent) {
+        // opHandle 声明在 try 外，确保失败路径中 catch 块可访问并正确释放
+        let opHandle = null;
+        let go = null;
+        try {
+            opHandle = addrInstantiate(key, parent);
+            await (0, puerts_1.$promise)(opHandle.Task);
+            // AsyncOperationStatus.Succeeded = 1 (Unity ResourceManagement)
+            if (opHandle.Status !== 1) {
+                throw new Error(`AsyncOperationStatus = ${opHandle.Status}`);
+            }
+            go = opHandle.Result;
+        }
+        catch (e) {
+            // go 未被赋值说明实例化未成功，需手动释放 opHandle 防止 Unity 资源泄漏
+            if (opHandle !== null && go === null) {
+                try {
+                    addrRelease(opHandle);
+                }
+                catch { /* 仅做最大努力释放 */ }
+            }
+            throw new Error(`[ResSystem] Failed to instantiate Addressable "${key}": ${e}`);
+        }
+        if (!go) {
+            throw new Error(`[ResSystem] instantiateAsync returned null GameObject for key "${key}"`);
+        }
+        this._instances.set(go, key);
+        this._log?.debug(`instantiateAsync: "${key}" (instances=${this._instances.size})`);
+        return new ResHandle_1.ResHandle(this, "instance", key, ResTypes_1.ResLoadType.Addressable, go);
+    }
+    // ── IResSystem — 释放接口 ─────────────────────────────────────────────────
+    releaseInstance(go) {
+        if (!this._instances.has(go)) {
+            this._log?.warn(`releaseInstance: unknown GameObject, ignored.`);
+            return;
+        }
+        const key = this._instances.get(go);
+        this._instances.delete(go);
+        try {
+            addrReleaseInstance(go);
+            this._log?.debug(`releaseInstance: "${key}" destroyed.`);
+        }
+        catch (e) {
+            this._log?.error(`releaseInstance: error releasing "${key}": ${e}`);
+        }
+    }
+    releaseAll() {
+        // 销毁全部存活 Addressable 实例
+        for (const [go, key] of this._instances) {
+            try {
+                addrReleaseInstance(go);
+            }
+            catch (e) {
+                this._log?.error(`releaseAll: error destroying instance "${key}": ${e}`);
+            }
+        }
+        this._instances.clear();
+        // 卸载全部缓存的 Addressable 资产。
+        // 对仍在加载中的条目（opHandle 尚为 null）：设置 cancelled 标记，通知等待方终止。
+        // 加载完成后由 loadAsync 检测 cancelled 标记并负责释放 opHandle。
+        for (const entry of this._addrAssets.values()) {
+            if (entry.pending !== null) {
+                entry.cancelled = true;
+            }
+            if (entry.opHandle !== null) {
+                try {
+                    addrRelease(entry.opHandle);
+                }
+                catch (e) {
+                    this._log?.error(`releaseAll: error releasing Addressable "${entry.key}": ${e}`);
+                }
+            }
+        }
+        this._addrAssets.clear();
+        // 卸载全部缓存的 Resources 资产
+        for (const entry of this._resAssets.values()) {
+            try {
+                resUnload(entry.asset);
+            }
+            catch (e) {
+                this._log?.error(`releaseAll: error unloading Resource "${entry.path}": ${e}`);
+            }
+        }
+        this._resAssets.clear();
+        this._log?.info(`releaseAll: all assets and instances released.`);
+    }
+    // ── IResSystem — 属性 ─────────────────────────────────────────────────────
+    /** 已完成加载的共享资产去重数量（不含加载中的 pending 条目） */
+    get loadedCount() {
+        let count = this._resAssets.size;
+        for (const entry of this._addrAssets.values()) {
+            if (entry.asset !== null)
+                count++;
+        }
+        return count;
+    }
+    get instanceCount() {
+        return this._instances.size;
+    }
+    // ── IResController（供 ResHandle 回调）────────────────────────────────────
+    onAssetHandleRelease(key, loadType) {
+        if (loadType === ResTypes_1.ResLoadType.Addressable) {
+            this._releaseAddrAsset(key);
+        }
+        else {
+            this._releaseResAsset(key);
+        }
+    }
+    onInstanceHandleRelease(go) {
+        this.releaseInstance(go);
+    }
+    // ── 私有辅助 ──────────────────────────────────────────────────────────────
+    /**
+     * 执行 Addressable 异步加载并将结果写入 entry。
+     * 失败时 entry.asset / entry.opHandle 保持 null，由调用方检查并上抛错误。
+     * 此函数内部捕获所有异常并确保 opHandle 不泄漏。
+     */
+    async _execAddrLoad(key, entry) {
+        // opHandle 声明在 try 外，确保失败路径中 catch 块可访问并正确释放
+        let opHandle = null;
+        try {
+            opHandle = addrLoad(key);
+            await (0, puerts_1.$promise)(opHandle.Task);
+            if (opHandle.Status !== 1 /* AsyncOperationStatus.Succeeded */) {
+                throw new Error(`AsyncOperationStatus = ${opHandle.Status}`);
+            }
+            entry.opHandle = opHandle;
+            entry.asset = opHandle.Result;
+        }
+        catch (e) {
+            this._log?.error(`_execAddrLoad: failed to load "${key}": ${e}`);
+            // entry.opHandle 未被赋值说明加载失败，需手动释放 opHandle 防止 Unity 资源泄漏
+            if (opHandle !== null && entry.opHandle === null) {
+                try {
+                    addrRelease(opHandle);
+                }
+                catch { /* 仅做最大努力释放 */ }
+            }
+        }
+    }
+    _releaseAddrAsset(key) {
+        const entry = this._addrAssets.get(key);
+        if (!entry)
+            return;
+        entry.refCount--;
+        this._log?.debug(`releaseAddrAsset: "${key}" refCount=${entry.refCount}`);
+        if (entry.refCount <= 0) {
+            if (entry.opHandle !== null) {
+                try {
+                    addrRelease(entry.opHandle);
+                }
+                catch (e) {
+                    this._log?.error(`releaseAddrAsset: error releasing "${key}": ${e}`);
+                }
+            }
+            this._addrAssets.delete(key);
+            this._log?.debug(`releaseAddrAsset: "${key}" unloaded.`);
+        }
+    }
+    _releaseResAsset(path) {
+        const entry = this._resAssets.get(path);
+        if (!entry)
+            return;
+        entry.refCount--;
+        this._log?.debug(`releaseResAsset: "${path}" refCount=${entry.refCount}`);
+        if (entry.refCount <= 0) {
+            try {
+                resUnload(entry.asset);
+            }
+            catch (e) {
+                this._log?.error(`releaseResAsset: error unloading "${path}": ${e}`);
+            }
+            this._resAssets.delete(path);
+            this._log?.debug(`releaseResAsset: "${path}" unloaded.`);
+        }
+    }
+}
+exports.ResSystem = ResSystem;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiUmVzU3lzdGVtLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiLi4vLi4vLi4vLi4vVHNQcm9qZWN0X1REL3NyYy9GcmFtZXdvcmsvUmVzTW9kdWxlL1Jlc1N5c3RlbS50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBdUJHOzs7QUFFSCxtQ0FBa0M7QUFFbEMsNERBQTREO0FBQzVELE1BQU0sR0FBRyxHQUFRLENBQUM7SUFDZCxJQUFJLENBQUM7UUFDRCxPQUFPLE9BQU8sQ0FBQyxRQUFRLENBQUMsQ0FBQztJQUM3QixDQUFDO0lBQUMsTUFBTSxDQUFDO1FBQ0wsT0FBTyxPQUFPLFVBQVUsS0FBSyxXQUFXLENBQUMsQ0FBQyxDQUFFLFVBQWtCLENBQUMsRUFBRSxDQUFDLENBQUMsQ0FBQyxTQUFTLENBQUM7SUFDbEYsQ0FBQztBQUNMLENBQUMsQ0FBQyxFQUFFLENBQUM7QUFDTCxJQUFJLE9BQU8sR0FBRyxLQUFLLFdBQVcsRUFBRSxDQUFDO0lBQzdCLE1BQU0sSUFBSSxLQUFLLENBQUMsK0VBQStFLENBQUMsQ0FBQztBQUNyRyxDQUFDO0FBS0QseUNBQXlDO0FBRXpDLDJDQUF3QztBQUd4Qyw0RUFBNEU7QUFDNUUscUNBQXFDO0FBQ3JDLGtDQUFrQztBQUVsQyx5SEFBeUg7QUFDekgsU0FBUyxRQUFRLENBQUMsR0FBVztJQUN6QixPQUFPLEdBQUcsQ0FBQyxrQkFBa0IsQ0FBQyxjQUFjLENBQUMsR0FBRyxDQUFDLENBQUM7QUFDdEQsQ0FBQztBQUVEOzs7R0FHRztBQUNILFNBQVMsZUFBZSxDQUFDLEdBQVcsRUFBRSxNQUFZO0lBQzlDLE9BQU8sTUFBTSxJQUFJLElBQUk7UUFDakIsQ0FBQyxDQUFDLEdBQUcsQ0FBQyxrQkFBa0IsQ0FBQyxnQkFBZ0IsQ0FBQyxHQUFHLEVBQUUsTUFBTSxDQUFDO1FBQ3RELENBQUMsQ0FBQyxHQUFHLENBQUMsa0JBQWtCLENBQUMsZ0JBQWdCLENBQUMsR0FBRyxD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

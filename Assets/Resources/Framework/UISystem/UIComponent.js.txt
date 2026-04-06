@@ -1,0 +1,123 @@
+"use strict";
+/**
+ * UIComponent — 可复用 UI 组件基类
+ *
+ * 继承 UINodeBase，自动获得：
+ *   Unity 事件绑定 / cfg 配置读取 / EventModule 事件管理 / 嵌套子组件管理 / Unity 快捷工具
+ *
+ * 适用场景：
+ *   在 ViewBase（或另一个 UIComponent）内部通过 createComponent 实例化的子控件，
+ *   例如列表 Item、可复用卡片、进度条等。
+ *   每个组件拥有独立的生命周期与资源句柄（由父节点持有并释放）。
+ *
+ * ─── cfg 与 cfgComp 数据读取 ──────────────────────────────────────────────────
+ *
+ *   预制体根节点上需挂载 ComponentConfig，在 Inspector 中配置数据。
+ *   在 onCreate() 中读取：
+ *
+ *     const speed = this.cfg.float("speed", 1.0);
+ *     const btn   = this.cfgComp<Button>("btnOk", CS.UnityEngine.UI.Button);
+ *
+ * ─── 生命周期 ─────────────────────────────────────────────────────────────────
+ *
+ *   父节点调用 createComponent(resKey, parent[, ctor]) →
+ *     _setup(go, handle)    — 注入 GO 引用（handle 由父节点持有，此处不存储）
+ *     _onCreate()
+ *       → onCreate()        — 获取 cfg 引用、调用 bindClick / bindEvent 绑定 Unity 事件
+ *       → onRegisterEvents() — 注册 EventModule 事件监听（可选重写）
+ *
+ *   父节点销毁或调用 destroyComponent() →
+ *     _onDestroy()
+ *       → onUnregisterEvents()       — 镜像清理（可选重写）
+ *       → open-scope 子组件销毁      — createOpenComponent 创建的子组件
+ *       → open-scope GO 释放         — createOpenGameObject 创建的 GO
+ *       → 生命周期子组件销毁          — createComponent 创建的子组件
+ *       → 生命周期 GO 释放            — createGameObject 创建的 GO
+ *       → Unity 事件解绑 → 可见性事件注销 → 生命周期事件注销
+ *       → onDestroy()
+ *     handle.release()      — GO 资源句柄由父节点在调用 _onDestroy() 后释放
+ *
+ * ─── 资源管理规则 ─────────────────────────────────────────────────────────────
+ *
+ *   当前组件自身的 GO 及资源句柄由【父节点】持有并释放，
+ *   UIComponent 本身不持有也不负责释放自己的 handle。
+ *
+ *   通过以下 API 创建的子资源，销毁时框架自动释放，无需手动管理：
+ *     createComponent(resKey, parent, ctor?)   — 创建子 UIComponent（生命周期作用域）
+ *     createOpenComponent(resKey, parent, ctor?) — 创建子 UIComponent（可见性作用域，UIComponent 内等同生命周期）
+ *     createGameObject(resKey, parent?)        — 创建纯 GO（生命周期作用域）
+ *     createOpenGameObject(resKey, parent?)    — 创建纯 GO（可见性作用域，UIComponent 内等同生命周期）
+ *   需提前销毁时，使用对应的 destroy*() 方法，框架从追踪列表移除，不会重复销毁。
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UIComponent = void 0;
+const UINodeBase_1 = require("./UINodeBase");
+class UIComponent extends UINodeBase_1.UINodeBase {
+    _nodeGO = null;
+    // ── GO 访问 ───────────────────────────────────────────────────────────────
+    /**
+     * 对应的 C# GameObject，由 _setup() 注入。
+     * 不应在 _setup() 调用前访问。
+     */
+    get go() { return this._nodeGO; }
+    // ── C# 配置访问 ───────────────────────────────────────────────────────────
+    /**
+     * 返回此组件 GO 上的 C# ComponentConfig 实例。
+     * UINodeBase.cfg 通过此方法获取配置对象，懒加载后缓存。
+     */
+    _getCsConfig() {
+        const g = this.go;
+        if (g == null)
+            return null;
+        try {
+            return g.GetComponent(CS.GameFramework.UI.ComponentConfig);
+        }
+        catch {
+            return null;
+        }
+    }
+    // ── 内部生命周期（由父 ViewBase / UIComponent 调用） ──────────────────────
+    /**
+     * [框架内部] 注入 GO 引用并重置数据读取器缓存。
+     * handle 由父节点的追踪列表持有，此处仅存储 GO，不存储 handle。
+     */
+    _setup(go, _handle) {
+        this._nodeGO = go;
+        this._resetDataReader();
+    }
+    /**
+     * [框架内部] 触发初始化流程，支持 async：
+     *   1. onCreate()         — 获取组件引用、绑定 Unity 事件
+     *   2. onRegisterEvents() — 注册 EventModule 事件监听（可选重写）
+     */
+    async _onCreate() {
+        await this.onCreate();
+        await this.onRegisterEvents();
+    }
+    /**
+     * [框架内部] 触发完整销毁流程：
+     *   1. onUnregisterEvents()       — 可选的手动事件清理钩子
+     *   2. _cleanupOpenComponents()   — 销毁所有 createOpenComponent 创建的子组件
+     *   3. _cleanupOpenGoHandles()    — 释放所有 createOpenGameObject 创建的 GO
+     *   4. _cleanupComponents()       — 递归销毁 createComponent 创建的子组件
+     *   5. _cleanupGoHandles()        — 释放 createGameObject 创建的 GO
+     *   6. _cleanupUnityBindings()    — 解绑所有已追踪的 Unity 事件（bindClick / bindEvent）
+     *   7. _cleanupVisibilityEvents() — 注销所有可见性作用域事件（addOpenEvent）
+     *   8. _cleanupEvents()           — 注销所有生命周期作用域事件（addEvent）
+     *   9. onDestroy()
+     * 调用完毕后，父节点负责 release() 当前组件的资源句柄。
+     */
+    _onDestroy() {
+        this.onUnregisterEvents();
+        this._cleanupOpenComponents();
+        this._cleanupOpenGoHandles();
+        this._cleanupComponents();
+        this._cleanupGoHandles();
+        this._cleanupUnityBindings();
+        this._cleanupVisibilityEvents();
+        this._cleanupEvents();
+        this.onDestroy();
+    }
+}
+exports.UIComponent = UIComponent;
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiVUlDb21wb25lbnQuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9VSVN5c3RlbS9VSUNvbXBvbmVudC50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7R0FpREc7OztBQUdILDZDQUEwQztBQUkxQyxNQUFzQixXQUFZLFNBQVEsdUJBQVU7SUFFeEMsT0FBTyxHQUFRLElBQUksQ0FBQztJQUU1QiwyRUFBMkU7SUFFM0U7OztPQUdHO0lBQ0gsSUFBYSxFQUFFLEtBQVUsT0FBTyxJQUFJLENBQUMsT0FBTyxDQUFDLENBQUMsQ0FBQztJQUUvQyx5RUFBeUU7SUFFekU7OztPQUdHO0lBQ2dCLFlBQVk7UUFDM0IsTUFBTSxDQUFDLEdBQUcsSUFBSSxDQUFDLEVBQUUsQ0FBQztRQUNsQixJQUFJLENBQUMsSUFBSSxJQUFJO1lBQUUsT0FBTyxJQUFJLENBQUM7UUFDM0IsSUFBSSxDQUFDO1lBQ0QsT0FBTyxDQUFDLENBQUMsWUFBWSxDQUFDLEVBQUUsQ0FBQyxhQUFhLENBQUMsRUFBRSxDQUFDLGVBQWUsQ0FBQyxDQUFDO1FBQy9ELENBQUM7UUFBQyxNQUFNLENBQUM7WUFDTCxPQUFPLElBQUksQ0FBQztRQUNoQixDQUFDO0lBQ0wsQ0FBQztJQUVELGlFQUFpRTtJQUVqRTs7O09BR0c7SUFDSCxNQUFNLENBQUMsRUFBTyxFQUFFLE9BQXdCO1FBQ3BDLElBQUksQ0FBQyxPQUFPLEdBQUcsRUFBRSxDQUFDO1FBQ2xCLElBQUksQ0FBQyxnQkFBZ0IsRUFBRSxDQUFDO0lBQzVCLENBQUM7SUFFRDs7OztPQUlHO0lBQ0gsS0FBSyxDQUFDLFNBQVM7UUFDWCxNQUFNLElBQUksQ0FBQyxRQUFRLEVBQUUsQ0FBQztRQUN0QixNQUFNLElBQUksQ0FBQyxnQkFBZ0IsRUFBRSxDQUFDO0lBQ2xDLENBQUM7SUFFRDs7Ozs7Ozs7Ozs7O09BWUc7SUFDSCxVQUFVO1FBQ04sSUFBSSxDQUFDLGtCQUFrQixFQUFFLENBQUM7UUFDMUIsSUFBSSxDQUFDLHNCQUFzQixFQUFFLENBQUM7UUFDOUIsSUFBSSxDQUFDLHFCQUFxQixFQUFFLENBQUM7UUFDN0IsSUFBSSxDQUFDLGtCQUFrQixFQUFFLENBQUM7UUFDMUIsSUFBSSxDQUFDLGlCQUFpQixFQUFFLENBQUM7UUFDekIsSUFBSSxDQUFDLHFCQUFxQixFQUFFLENBQUM7UUFDN0IsSUFBSSxDQUFDLHdCQUF3QixFQUFFLENBQUM7UUFDaEMsSUFBSSxDQUFDLGNBQWMsRUFBRSxDQUFDO1FBQ3RCLElBQUksQ0FBQyxTQUFTLEVBQUUsQ0FBQztJQUNyQixDQUFDO0NBdUJKO0FBL0ZELGtDQStGQyJ9

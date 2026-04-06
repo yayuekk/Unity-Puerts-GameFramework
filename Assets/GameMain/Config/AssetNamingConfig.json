@@ -1,0 +1,44 @@
+{
+    "scanRoot": "Assets",
+    "config": {
+        "rules": [
+            {
+                "extension": ".prefab",
+                "prefix": "PF_",
+                "suffix": "",
+                "useRegex": false,
+                "pattern": ""
+            },
+            {
+                "extension": ".png",
+                "prefix": "Tex_",
+                "suffix": "",
+                "useRegex": false,
+                "pattern": ""
+            },
+            {
+                "extension": ".asset",
+                "prefix": "SO_",
+                "suffix": "",
+                "useRegex": false,
+                "pattern": ""
+            }
+        ],
+        "pathRules": [
+            {
+                "pathPrefix": "Assets/GameMain/GameRes/CommonRes/CommonSprite",
+                "prefix": "",
+                "suffix": "",
+                "useRegex": false,
+                "pattern": ""
+            }
+        ],
+        "ignorePathPrefixes": [],
+        "ignoreExtensions": [
+            ".cs",
+            ".js.txt",
+            ".js.txt",
+            ".js.txt"
+        ]
+    }
+}

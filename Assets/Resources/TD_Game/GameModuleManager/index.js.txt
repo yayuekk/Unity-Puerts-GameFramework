@@ -1,0 +1,12 @@
+"use strict";
+/**
+ * GameModule 游戏逻辑模块管理器 — 公共 API
+ *
+ * 使用方式：
+ *   import { GameModule, type IGameLogicModule, type IGameModuleManager } from "../GameModule";
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GameModule = void 0;
+var GameModule_1 = require("./GameModule");
+Object.defineProperty(exports, "GameModule", { enumerable: true, get: function () { return GameModule_1.GameModule; } });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiaW5kZXguanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL1REX0dhbWUvR2FtZU1vZHVsZU1hbmFnZXIvaW5kZXgudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7OztHQUtHOzs7QUFFSCwyQ0FBMEM7QUFBakMsd0dBQUEsVUFBVSxPQUFBIn0=

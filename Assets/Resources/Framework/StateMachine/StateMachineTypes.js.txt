@@ -1,0 +1,33 @@
+"use strict";
+/**
+ * StateMachineTypes — 状态机系统公共类型定义
+ *
+ * 设计原则：
+ *   - 仅包含接口、类型别名与常量，不含任何实现逻辑
+ *   - StateBase / StateMachine 均依赖此文件的接口编程，实现之间无直接耦合
+ *   - 泛型参数 TOwner 代表持有状态机的宿主类型，贯穿整个模块
+ *
+ * 生命周期流程（StateMachine 驱动）：
+ *
+ *   ┌─ 首次进入（setInitialState，机器未运行）──────────────────────────────┐
+ *   │  _getOrCreate(): new → _setup → _onInit() → 写入缓存                 │
+ *   │  → notifyListeners(null, state) → _onEnter(null)                     │
+ *   └───────────────────────────────────────────────────────────────────────┘
+ *
+ *   ┌─ 状态切换（changeTo → _runTransitionLoop 迭代引擎）──────────────────┐
+ *   │  guard check → _getOrCreate(next) → prevState._onLeave(next)         │
+ *   │  → [_current = next] → notifyListeners(prev, next)                   │
+ *   │  → nextState._onEnter(prev) → 消费 _pendingState（循环下一轮）        │
+ *   │  （pending 转换在新 _current 上重新检查守卫）                         │
+ *   └───────────────────────────────────────────────────────────────────────┘
+ *
+ *   ┌─ 每帧驱动 ────────────────────────────────────────────────────────────┐
+ *   │  machine.update(dt) → currentState._onUpdate(dt)                     │
+ *   └───────────────────────────────────────────────────────────────────────┘
+ *
+ *   ┌─ 销毁（destroy）──────────────────────────────────────────────────────┐
+ *   │  所有缓存状态调用 _onDestroy() → 清空缓存、守卫、监听器               │
+ *   └───────────────────────────────────────────────────────────────────────┘
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiU3RhdGVNYWNoaW5lVHlwZXMuanMiLCJzb3VyY2VSb290IjoiIiwic291cmNlcyI6WyIuLi8uLi8uLi8uLi9Uc1Byb2plY3RfVEQvc3JjL0ZyYW1ld29yay9TdGF0ZU1hY2hpbmUvU3RhdGVNYWNoaW5lVHlwZXMudHMiXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQTZCRyJ9
